@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Examen de Ingreso 2027 | EST - UTN San Miguel</title>
+  <meta name="description" content="Sistema de evaluación, doble carga cruzada, analíticas y gestión del examen de ingreso a 1.er año 2027 de la Escuela Secundaria Técnica UTN San Miguel.">
+
+  <!-- Hojas de estilo y tipografías -->
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!-- Firebase SDK Compat Oficial -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
+  <!-- Chart.js para analíticas y visualización de gráficos interactivos -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- ==========================================================================
+       PANTALLA DE INICIO DE SESIÓN EXCLUSIVA FIREBASE AUTH
+       ========================================================================== -->
+  <div id="firebaseAuthOverlay" class="auth-overlay-backdrop">
+    <div class="auth-card">
+      <div class="auth-card-header">
+        <div class="auth-logo-badge">📐</div>
+        <h2>EST &bull; UTN San Miguel</h2>
+        <div class="auth-subtitle">Examen de Ingreso 2027 &bull; Acceso Institucional</div>
+      </div>
+
+      <div class="auth-card-body">
+        <p class="auth-desc">
+          Ingresá con tu cuenta oficial de <strong>Firebase Authentication</strong> para acceder a tus exámenes asignados y al sistema de doble carga.
+        </p>
+
+        <!-- Chips de selección rápida de cuentas institucionales -->
+        <div class="quick-accounts-label">Seleccioná tu usuario:</div>
+        <div class="quick-accounts-chips">
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('ipavelek@gmail.com')">
+            🎓 Director
+          </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('santiago.poggio@inspt.utn.edu.ar')">
+            ⚖️ Santiago Poggio (Vice)
+          </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('est.sanmiguel@inspt.utn.edu.ar')">
+            👩‍🏫 Cecilia
+          </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('adrian.escudero@inspt.utn.edu.ar')">
+            👨‍🏫 Adrian
+          </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('benhamin.gimenez@inspt.utn.edu.ar')">
+            👨‍🏫 Benhamin
+          </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('geraldine.crousaz@inspt.utn.edu.ar')">
+            👩‍🏫 Geraldine
+          </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('karen.pereira@inspt.utn.edu.ar')">
+            👩‍🏫 Karen
+          </button>
+        </div>
+
+        <form id="firebaseLoginForm" onsubmit="window.app.handleFirebaseLogin(event)">
+          <div class="form-group mb-3">
+            <label for="authEmailInput" class="form-label-auth">Correo Electrónico:</label>
+            <input type="email" id="authEmailInput" class="form-control-auth" placeholder="ejemplo@inspt.utn.edu.ar" required autocomplete="username">
+          </div>
+
+          <div class="form-group mb-4">
+            <label for="authPasswordInput" class="form-label-auth">Contraseña de Firebase:</label>
+            <input type="password" id="authPasswordInput" class="form-control-auth" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+
+          <div id="authErrorMessage" class="auth-error-alert" style="display: none;"></div>
+
+          <button type="submit" id="btnSubmitLogin" class="btn btn-primary btn-block w-100 py-2">
+            🔐 Iniciar Sesión con Firebase
+          </button>
+        </form>
+
+        <div class="auth-card-footer mt-3 text-center">
+          <small class="text-muted">Conectado a Firebase Firestore: <code style="color: var(--color-accent);">exingutn2027</code></small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       HEADER PRINCIPAL DE LA APLICACIÓN
+       ========================================================================== -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-logo-icon">📐</div>
+      <div>
+        <h1 class="brand-title">EST &bull; UTN San Miguel</h1>
+        <div class="brand-subtitle">Examen de Ingreso 2027 &bull; Ciclo Lectivo</div>
+      </div>
+    </div>
+
+    <!-- Pestañas de Navegación Dinámicas por Rol -->
+    <nav class="nav-tabs-wrapper" aria-label="Navegación principal">
+      <button class="nav-tab-btn active" data-tab="carga" id="navBtnCarga">
+        <span>✏️</span> Carga Ágil
+      </button>
+      <button class="nav-tab-btn" data-tab="mi-progreso" id="navBtnMiProgreso" style="display: none;">
+        <span>📊</span> Mi Progreso de Carga
+      </button>
+      <button class="nav-tab-btn" data-tab="monitor-preceptores" id="navBtnMonitorPreceptores" style="display: none;">
+        <span>📈</span> Monitor de Preceptores
+      </button>
+      <button class="nav-tab-btn" data-tab="auditoria" id="navBtnAuditoria" style="display: none;">
+        <span>🔍</span> Auditoría y Doble Carga
+      </button>
+      <button class="nav-tab-btn" data-tab="estadisticas" id="navBtnEstadisticas" style="display: none;">
+        <span>📊</span> Estadísticas Pedagógicas
+      </button>
+      <button class="nav-tab-btn" data-tab="estudiantes" id="navBtnEstudiantes">
+        <span>👥</span> Padrón y Contactos
+      </button>
+      <button class="nav-tab-btn" data-tab="exportar" id="navBtnExportar" style="display: none;">
+        <span>📄</span> Actas y Exportación
+      </button>
+    </nav>
+
+    <!-- Estado de Nube y Perfil de Usuario Activo -->
+    <div class="header-actions">
+      <div id="firebaseStatusBadge" class="status-pill pill-success" title="Conectado a Firebase Firestore en tiempo real">
+        🟢 Online (exingutn2027)
+      </div>
+
+      <div class="user-badge-container">
+        <div class="user-avatar" id="navUserAvatar">U</div>
+        <div class="user-info-text">
+          <span class="user-name-label" id="navUserProfileName">Cargando...</span>
+          <span class="badge-role" id="navUserProfileRole">ROL</span>
+        </div>
+        <button type="button" class="btn-logout-header" onclick="window.FirebaseSyncService.signOut()" title="Cerrar Sesión">
+          🚪
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==========================================================================
+       SECCIÓN 1: VISTA DE CARGA ÁGIL DE EXÁMENES
+       ========================================================================== -->
+  <main id="view-carga" class="view-section active">
+    <div class="agile-load-grid">
+
+      <!-- Columna 1: Búsqueda y Lista de Estudiantes -->
+      <aside class="students-sidebar-card">
+        <div class="sidebar-header">
+          <!-- Filtro de Asignación: Mis Asignados vs Todos -->
+          <div class="mb-2">
+            <select id="studentScopeFilter" class="form-select-sm" title="Alcance de visualización" style="background: rgba(30, 41, 59, 0.9); font-weight: 600; color: #38bdf8;">
+              <option value="assigned">🎯 Mis Asignados (Doble Carga)</option>
+              <option value="all">📋 Todos los Estudiantes (311)</option>
+            </select>
+          </div>
+
+          <div class="search-input-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="studentSearchInput" class="form-control-search" placeholder="Buscar DNI, Apellido o Nombre..." autocomplete="off">
+          </div>
+
+          <div class="d-flex gap-2">
+            <select id="studentAulaFilter" class="form-select-sm" title="Filtrar por Aula">
+              <option value="all">Todas las Aulas (1 a 8)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="studentsListContainer" class="students-scroll-list">
+          <!-- Lista inyectada dinámicamente con JavaScript -->
+        </div>
+      </aside>
+
+      <!-- Columna 2: Cuadro de Respuestas y Examen -->
+      <section class="exam-grading-card">
+        <!-- Banner del Alumno Seleccionado -->
+        <div class="selected-student-banner">
+          <div class="student-banner-info">
+            <div class="student-banner-title">
+              <span id="selectedStudentName">Seleccioná un estudiante</span>
+              <span id="selectedStudentAula" class="badge-aula">Aula -</span>
+              <span id="selectedStudentAttendBadge" class="status-pill pill-success">PRESENTE</span>
+            </div>
+
+            <!-- Banner de Preceptores Asignados para Doble Carga -->
+            <div id="selectedStudentAssignedBadge" class="assigned-dual-banner">
+              🎯 Asignados para Doble Carga: <strong id="assignedPreceptorsNames">-</strong>
+            </div>
+
+            <div class="student-banner-meta">
+              <span><strong>DNI:</strong> <span id="selectedStudentDni">-</span></span>
+              <span><strong>Tutor:</strong> <span id="selectedStudentTutor">-</span></span>
+              <span><strong>Tel:</strong> <a id="selectedStudentPhoneLink" href="#">-</a></span>
+              <a id="selectedStudentWaLink" href="#" target="_blank" class="status-pill pill-success" style="display: none; padding: 0.15rem 0.5rem; text-decoration: none;">
+                💬 WhatsApp
+              </a>
+              <span><strong>Escuela de Origen:</strong> <span id="selectedStudentSchool" style="color: #67e8f9;">-</span></span>
+            </div>
+          </div>
+
+          <div class="student-banner-actions">
+            <!-- Selector de Tema A y B -->
+            <div class="tema-selector-container" title="Seleccioná Tema A o B (Atajo: Alt+A / Alt+B)">
+              <button type="button" id="btnTemaA" class="tema-btn active">Tema A</button>
+              <button type="button" id="btnTemaB" class="tema-btn">Tema B</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grilla de Respuestas 1 a 20 -->
+        <div id="answerSheetRows" class="answer-sheet-container">
+          <!-- Generado dinámicamente por JavaScript -->
+        </div>
+
+        <!-- Barra Inferior de Acción y Guardado -->
+        <div class="exam-action-footer">
+          <div class="keyboard-hints">
+            <span><span class="key-badge">A</span> <span class="key-badge">B</span> <span class="key-badge">C</span> <span class="key-badge">D</span> opción</span>
+            <span><span class="key-badge">1</span> <span class="key-badge">2</span> <span class="key-badge">3</span> <span class="key-badge">4</span> numérico</span>
+            <span><span class="key-badge">Espacio</span> blanco</span>
+            <span><span class="key-badge">Enter</span> Guardar en Firestore</span>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="button" id="btnPrevStudent" class="btn btn-secondary btn-sm" title="Alumno anterior">
+              ⬅ Anterior
+            </button>
+            <button type="button" id="btnMarkAbsent" class="btn btn-danger btn-sm" title="Marcar alumno como ausente">
+              Ausente
+            </button>
+            <button type="button" id="btnSaveExam" class="btn btn-primary" title="Guardar calificación directamente en Firestore (Enter)">
+              💾 Guardar Examen (Enter)
+            </button>
+            <button type="button" id="btnNextStudent" class="btn btn-secondary btn-sm" title="Siguiente alumno">
+              Siguiente ➡
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Columna 3: Tarjeta de Puntuación en Vivo -->
+      <aside class="live-scorecard-card">
+        <div class="scorecard-header">
+          <span>Puntuación en Vivo</span>
+          <span style="font-size: 0.75rem; color: var(--color-accent);">0.5 pts c/u</span>
+        </div>
+
+        <div class="score-big-display">
+          <div class="score-number" id="liveScoreTotal">0.0</div>
+          <div class="score-max-label">de 10.0 Puntos Totales</div>
+          <div id="liveScoreStatus" class="score-badge badge-failed">NO ALCANZA</div>
+        </div>
+
+        <div class="subject-breakdown-box">
+          <div class="subject-item">
+            <div class="subject-name">📐 Matemática (P1 a P10)</div>
+            <div class="subject-score" id="liveScoreMath">0.0 / 5.0</div>
+          </div>
+          <div class="subject-item">
+            <div class="subject-name">📖 Prácticas del Lenguaje (P11 a P20)</div>
+            <div class="subject-score" id="liveScoreLang">0.0 / 5.0</div>
+          </div>
+        </div>
+
+        <!-- Estado de doble carga del alumno actual -->
+        <div id="currentStudentDualStatusBox" class="p-3" style="background: rgba(15, 23, 42, 0.7); border-radius: var(--radius-md); font-size: 0.8rem; border: 1px solid var(--border-subtle);">
+          <strong style="color: var(--text-main); display: block; margin-bottom: 0.35rem;">👥 Control de Doble Carga:</strong>
+          <div id="currentStudentDualLoadDetails">Cargando estado...</div>
+        </div>
+      </aside>
+
+    </div>
+  </main>
+
+  <!-- ==========================================================================
+       SECCIÓN: MI PROGRESO DE CARGA (DASHBOARD PERSONAL PRECEPTOR)
+       ========================================================================== -->
+  <main id="view-mi-progreso" class="view-section">
+    <!-- Banner de Información Personal -->
+    <div class="my-progress-banner">
+      <div class="my-progress-title-row">
+        <div>
+          <h2 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 0.3rem;">
+            📊 Mi Tablero de Carga &bull; <span id="myProgressPreceptorName" style="color: var(--color-accent);">-</span>
+          </h2>
+          <div style="font-size: 0.85rem; color: var(--text-muted);">
+            Examen de Ingreso 2027 &bull; Distribución Oficial de Doble Carga Cruzada
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="status-pill pill-success">🎯 Modo Carga Individual Asignada</span>
+        </div>
+      </div>
+
+      <!-- Barra de Progreso Principal -->
+      <div class="progress-widget">
+        <div class="progress-header">
+          <span>Avance de mi cuota asignada: <strong id="myProgressPercentLabel">0%</strong></span>
+          <span id="myProgressRatioLabel">0 / 0 exámenes</span>
+        </div>
+        <div class="progress-bar-track" style="height: 12px;">
+          <div id="myProgressBarFill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tarjetas de Métricas Personales -->
+    <div class="kpi-cards-grid">
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">🎯</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="myKpiAssigned">0</span>
+          <span class="kpi-label">Exámenes Asignados a Mí</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">✍️</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="myKpiLoaded" style="color: #34d399;">0</span>
+          <span class="kpi-label">Cargados por Mí</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">⏳</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="myKpiPending" style="color: #fbbf24;">0</span>
+          <span class="kpi-label">Pendientes por Cargar</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(139, 92, 246, 0.15); color: #c084fc;">🤝</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="myKpiMatched" style="color: #c084fc;">0</span>
+          <span class="kpi-label">Coincidentes con 2do Preceptor</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barra de Filtros de Estudiantes Asignados -->
+    <div class="audit-toolbar">
+      <div class="filter-group">
+        <input type="text" id="myProgressSearchInput" class="form-control-search" style="width: 260px;" placeholder="Buscar en mis asignados..." oninput="window.app.renderMiProgresoView()">
+        <select id="myProgressAulaFilter" class="form-select-sm" style="width: 170px;" onchange="window.app.renderMiProgresoView()">
+          <option value="all">Todas las Aulas</option>
+        </select>
+        <select id="myProgressStatusFilter" class="form-select-sm" style="width: 220px;" onchange="window.app.renderMiProgresoView()">
+          <option value="all">Todos los Estados</option>
+          <option value="pending_me">⏳ Pendientes de mi carga</option>
+          <option value="loaded_me">✍️ Ya cargados por mí</option>
+          <option value="matched">✅ Coincidentes (100%)</option>
+          <option value="discrepancy">⚠️ Con discrepancia</option>
+        </select>
+      </div>
+
+      <div id="myProgressCountBadge" class="badge-role" style="color: #38bdf8;">
+        0 alumnos
+      </div>
+    </div>
+
+    <!-- Tabla Detallada de Alumnos Asignados -->
+    <div class="table-responsive">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th class="text-center" style="width: 50px;">#</th>
+            <th>Estudiante</th>
+            <th>DNI</th>
+            <th class="text-center">Aula</th>
+            <th class="text-center">Mi Estado de Carga</th>
+            <th class="text-center">Mi Calificación</th>
+            <th>Colega de Doble Carga</th>
+            <th class="text-center">Estado Pareja</th>
+            <th class="text-end">Acción</th>
+          </tr>
+        </thead>
+        <tbody id="myProgressTableBody">
+          <!-- Inyectado dinámicamente -->
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- ==========================================================================
+       SECCIÓN: MONITOR INSTITUCIONAL DE PRECEPTORES (DIRECCIÓN / VICEDIRECCIÓN)
+       ========================================================================== -->
+  <main id="view-monitor-preceptores" class="view-section">
+    <!-- Header del Monitor -->
+    <div class="audit-toolbar" style="margin-bottom: 1.5rem;">
+      <div>
+        <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.25rem;">
+          📈 Monitor Institucional de Doble Carga Cruzada
+        </h2>
+        <small class="text-muted">Supervisión en tiempo real del progreso individual de carga de los 5 preceptores</small>
+      </div>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="badge-role" style="color: #34d399;">🔥 Firestore Cloud Online</span>
+      </div>
+    </div>
+
+    <!-- KPIs Globales de Carga de la Institución -->
+    <div class="kpi-cards-grid">
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">📋</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="monitorKpiTotalNeeded">622</span>
+          <span class="kpi-label">Evaluaciones Requeridas (311 &times; 2)</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">💾</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="monitorKpiTotalDone" style="color: #34d399;">0</span>
+          <span class="kpi-label">Evaluaciones Completadas</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(139, 92, 246, 0.15); color: #c084fc;">🎯</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="monitorKpiGlobalPercent" style="color: #c084fc;">0%</span>
+          <span class="kpi-label">Avance Global del Operativo</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">👥</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="monitorKpiDoubleComplete" style="color: #fbbf24;">0 / 311</span>
+          <span class="kpi-label">Exámenes con Doble Carga (2/2)</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">⚠️</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="monitorKpiDiscrepancies" style="color: #f87171;">0</span>
+          <span class="kpi-label">Discrepancias para Resolver</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Grilla de las 5 Tarjetas Individuales de los Preceptores -->
+    <h3 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 0.85rem; color: var(--text-main);">
+      👥 Desempeño y Estado de Carga por Preceptor:
+    </h3>
+    <div id="preceptorsCardsContainer" class="preceptors-monitor-grid">
+      <!-- Inyectado dinámicamente: 5 tarjetas (Cecilia, Adrian, Benhamin, Geraldine, Karen) -->
+    </div>
+
+    <!-- Gráfico Comparativo Chart.js -->
+    <div class="chart-card mb-4">
+      <div class="chart-card-header">
+        <h2 class="chart-card-title">📊 Comparativa de Carga entre Preceptores (Cargados vs Pendientes)</h2>
+        <small class="text-muted">Balance del operativo entre Cecilia, Adrian, Benhamin, Geraldine y Karen</small>
+      </div>
+      <div class="chart-container-box" style="height: 320px;">
+        <canvas id="chartPreceptorsProgress"></canvas>
+      </div>
+    </div>
+
+    <!-- Inspección Detallada con Filtro por Preceptor -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <h2 class="chart-card-title">🔍 Detalle de Carga y Asignaciones por Preceptor</h2>
+        <small class="text-muted">Filtrá por preceptor para ver exactamente qué exámenes ya cargó y cuáles tiene pendientes</small>
+      </div>
+
+      <div class="audit-toolbar" style="margin-top: 1rem;">
+        <div class="filter-group">
+          <select id="monitorPreceptorSelect" class="form-select-sm" style="width: 220px; font-weight: 700; color: #38bdf8;" onchange="window.app.renderMonitorPreceptoresTable()">
+            <option value="all">👥 Todos los Preceptores (622)</option>
+            <option value="1OaYaghiGSTs0YAiKaRjIKJfk4g2">👩‍🏫 Cecilia (125)</option>
+            <option value="5fqlfqIFCHUwY2RfBK10HcoFu2H2">👨‍🏫 Adrian (124)</option>
+            <option value="UQj5suJsRmfbHlj7bm7nx5VOf692">👨‍🏫 Benhamin (124)</option>
+            <option value="d57D2kOpFWS8vMLVOBPWFb7kn2q1">👩‍🏫 Geraldine (124)</option>
+            <option value="M4uLZtXQO7ezGS5M8vRd0lF9Vxj2">👩‍🏫 Karen (124)</option>
+          </select>
+
+          <select id="monitorStatusFilter" class="form-select-sm" style="width: 200px;" onchange="window.app.renderMonitorPreceptoresTable()">
+            <option value="all">Todos los Estados</option>
+            <option value="loaded">✅ Ya Cargado</option>
+            <option value="pending">⏳ Pendiente</option>
+            <option value="discrepancy">⚠️ Discrepancia</option>
+            <option value="matched">🎯 Coincidente 100%</option>
+          </select>
+
+          <input type="text" id="monitorSearchInput" class="form-control-search" style="width: 240px;" placeholder="Buscar estudiante o DNI..." oninput="window.app.renderMonitorPreceptoresTable()">
+        </div>
+
+        <div id="monitorTableCountBadge" class="badge-role" style="color: var(--color-accent);">
+          0 registros
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th class="text-center" style="width: 50px;">#</th>
+              <th>Estudiante</th>
+              <th>DNI</th>
+              <th class="text-center">Aula</th>
+              <th>Preceptor Titular 1</th>
+              <th class="text-center">Carga 1</th>
+              <th>Preceptor Titular 2</th>
+              <th class="text-center">Carga 2</th>
+              <th class="text-center">Estado Doble Carga</th>
+              <th class="text-end">Acción</th>
+            </tr>
+          </thead>
+          <tbody id="monitorDetailTableBody">
+            <!-- Inyectado por JavaScript -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- ==========================================================================
+       SECCIÓN 2: AUDITORÍA DE CARGAS Y DOBLE CARGA (RESERVADA DIRECTIVOS)
+       ========================================================================== -->
+  <main id="view-auditoria" class="view-section">
+    <!-- Tarjetas de Resumen KPI -->
+    <div class="kpi-cards-grid">
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">👥</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="auditKpiTotal">311</span>
+          <span class="kpi-label">Padrón Total</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">✅</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="auditKpiMatched" style="color: #34d399;">0</span>
+          <span class="kpi-label">Cargas Coincidentes</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">⚠️</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="auditKpiDiscrepancies" style="color: #f87171;">0</span>
+          <span class="kpi-label">Discrepancias por Resolver</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">📝</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="auditKpiSingle" style="color: #fbbf24;">0</span>
+          <span class="kpi-label">Carga Simple (1/2)</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(139, 92, 246, 0.15); color: #c084fc;">⚖️</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="auditKpiResolved" style="color: #c084fc;">0</span>
+          <span class="kpi-label">Resueltas por Dirección</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8;">⏳</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="auditKpiPending">311</span>
+          <span class="kpi-label">Pendientes</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barra de Filtros y Búsqueda -->
+    <div class="audit-toolbar">
+      <div class="filter-group">
+        <input type="text" id="auditSearchInput" class="form-control-search" style="width: 260px;" placeholder="Buscar en auditoría..." oninput="window.app.renderAuditView()">
+        <select id="auditAulaFilter" class="form-select-sm" style="width: 170px;" onchange="window.app.renderAuditView()">
+          <option value="all">Todas las Aulas</option>
+        </select>
+        <select id="auditStatusFilter" class="form-select-sm" style="width: 200px;" onchange="window.app.renderAuditView()">
+          <option value="all">Todos los Estados</option>
+          <option value="discrepancy">⚠️ Con Discrepancias</option>
+          <option value="matched">✅ Coincidentes / Resueltas</option>
+          <option value="single">📝 Carga Única (Falta 2da carga)</option>
+          <option value="pending">⏳ Sin Cargar</option>
+        </select>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge-role" style="color: #34d399;">🔥 Sincronizado en tiempo real</span>
+      </div>
+    </div>
+
+    <!-- Tabla de Auditoría -->
+    <div class="table-responsive">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th class="text-center" style="width: 50px;">#</th>
+            <th>Estudiante</th>
+            <th>DNI</th>
+            <th class="text-center">Aula</th>
+            <th>Preceptores Asignados</th>
+            <th class="text-center">Estado Doble Carga</th>
+            <th class="text-center">Cargas</th>
+            <th class="text-center">Calificación</th>
+            <th class="text-end">Acción</th>
+          </tr>
+        </thead>
+        <tbody id="auditTableBody">
+          <!-- Inyectado por JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- ==========================================================================
+       SECCIÓN 3: ESTADÍSTICAS Y ANALÍTICAS PEDAGÓGICAS (RESERVADA DIRECTIVOS)
+       ========================================================================== -->
+  <main id="view-estadisticas" class="view-section">
+    <!-- Tarjetas de Resumen General -->
+    <div class="kpi-cards-grid">
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">🎯</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="statAvgTotal">0.00</span>
+          <span class="kpi-label">Promedio General (/10)</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(6, 182, 212, 0.15); color: #22d3ee;">📐</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="statAvgMath">0.00 / 5.0</span>
+          <span class="kpi-label">Promedio Matemática</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">📖</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="statAvgLang">0.00 / 5.0</span>
+          <span class="kpi-label">Promedio Lengua</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">🎓</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="statPassRate">0%</span>
+          <span class="kpi-label">Tasa de Aprobados (>= 6)</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">📋</div>
+        <div class="kpi-data">
+          <span class="kpi-value" id="statEvaluatedCount">0 de 311</span>
+          <span class="kpi-label">Exámenes Evaluados</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráficos Interactivos Chart.js -->
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h2 class="chart-card-title">📊 Distribución de Calificaciones (Histograma)</h2>
+          <small class="text-muted">Cantidad de estudiantes según tramo de notas obtenidas</small>
+        </div>
+        <div class="chart-container-box">
+          <canvas id="chartDistribution"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h2 class="chart-card-title">⚖️ Comparativa: Matemática vs Prácticas del Lenguaje</h2>
+          <small class="text-muted">Desempeño medio alcanzado por materia</small>
+        </div>
+        <div class="chart-container-box">
+          <canvas id="chartSubjects"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card" style="grid-column: 1 / -1;">
+        <div class="chart-card-header">
+          <h2 class="chart-card-title">🎯 Rendimiento Pregunta por Pregunta (% de Aciertos)</h2>
+          <small class="text-muted">Identificación de preguntas más complejas y temas a reforzar en nivelación</small>
+        </div>
+        <div class="chart-container-box" style="height: 380px;">
+          <canvas id="chartQuestions"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h2 class="chart-card-title">🏫 Desempeño Promedio por Aula</h2>
+          <small class="text-muted">Comparativa de promedios de calificación por cada aula</small>
+        </div>
+        <div class="chart-container-box">
+          <canvas id="chartAulas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Matriz Diagnóstica Pedagógica -->
+    <div class="chart-card mb-4">
+      <div class="chart-card-header">
+        <h2 class="chart-card-title">📑 Matriz Diagnóstica de Contenidos Teóricos Evaluados</h2>
+        <small class="text-muted">Análisis detallado de los 20 criterios pedagógicos para la planificación curricular</small>
+      </div>
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th class="text-center" style="width: 50px;">Ítem</th>
+              <th>Materia</th>
+              <th>Contenido Específico</th>
+              <th>Criterio Evaluado</th>
+              <th class="text-center">% Acierto (Correctas/Total)</th>
+              <th class="text-center">Nivel de Dificultad</th>
+            </tr>
+          </thead>
+          <tbody id="pedagogicalQuestionsTableBody">
+            <!-- Inyectado por JavaScript -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Ranking de Escuelas de Procedencia -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <h2 class="chart-card-title">🏛️ Desempeño según Escuela Primaria de Procedencia</h2>
+        <small class="text-muted">Vinculación con el formulario de inscripción para identificar escuelas de origen de los mejores promedios</small>
+      </div>
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th class="text-center" style="width: 50px;">#</th>
+              <th>Escuela Primaria de Origen</th>
+              <th class="text-center">Inscriptos</th>
+              <th class="text-center">Evaluados</th>
+              <th class="text-center">Promedio Calificación</th>
+              <th class="text-center">% Aprobados</th>
+            </tr>
+          </thead>
+          <tbody id="schoolRankingTableBody">
+            <!-- Inyectado por JavaScript -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- ==========================================================================
+       SECCIÓN 4: PADRÓN COMPLETO Y CONTACTOS
+       ========================================================================== -->
+  <main id="view-estudiantes" class="view-section">
+    <div class="audit-toolbar">
+      <div class="filter-group">
+        <input type="text" id="dirSearchInput" class="form-control-search" style="width: 250px;" placeholder="Buscar por DNI, alumno o tutor..." oninput="window.app.renderStudentsDirectory()">
+        <select id="dirAulaFilter" class="form-select-sm" style="width: 150px;" onchange="window.app.renderStudentsDirectory()">
+          <option value="all">Todas las Aulas</option>
+        </select>
+        <select id="dirAttendFilter" class="form-select-sm" style="width: 150px;" onchange="window.app.renderStudentsDirectory()">
+          <option value="all">Toda Asistencia</option>
+          <option value="presente">Solo Presentes</option>
+          <option value="ausente">Solo Ausentes</option>
+        </select>
+        <select id="dirSchoolFilter" class="form-select-sm" style="width: 250px;" onchange="window.app.renderStudentsDirectory()">
+          <option value="all">Todas las Escuelas de Origen</option>
+        </select>
+      </div>
+
+      <div id="dirTotalCount" class="badge-role" style="font-size: 0.85rem; color: var(--color-accent);">
+        311 estudiantes
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th class="text-center" style="width: 45px;">#</th>
+            <th>Estudiante</th>
+            <th>DNI</th>
+            <th class="text-center">Aula</th>
+            <th>Preceptores Asignados</th>
+            <th class="text-center">Asistencia</th>
+            <th>Escuela Primaria de Origen</th>
+            <th class="text-center">Nota Examen</th>
+            <th class="text-end">Contacto Directo</th>
+          </tr>
+        </thead>
+        <tbody id="directoryTableBody">
+          <!-- Inyectado por JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- ==========================================================================
+       SECCIÓN 5: ACTAS OFICIALES Y EXPORTACIÓN
+       ========================================================================== -->
+  <main id="view-exportar" class="view-section">
+    <div class="audit-toolbar no-print">
+      <div>
+        <h2 style="font-size: 1.15rem; margin-bottom: 0.25rem;">📄 Actas Oficiales y Descarga de Resultados</h2>
+        <small class="text-muted">Generación de planillas para autoridades ministeriales y actas de examen</small>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button class="btn btn-secondary" onclick="window.app.printOfficialActa()">
+          🖨️ Imprimir Acta Oficial (PDF / A4)
+        </button>
+        <button class="btn btn-primary" onclick="window.app.exportToCSV()">
+          📥 Exportar a Excel (CSV Completo con Respuestas)
+        </button>
+      </div>
+    </div>
+
+    <!-- Encabezado exclusivo para Impresión Oficial -->
+    <div class="official-print-header" style="display: none;">
+      <h1>ESCUELA SECUNDARIA TÉCNICA – UTN – SAN MIGUEL</h1>
+      <h2>ACTA OFICIAL DE CALIFICACIONES &bull; EXAMEN DE INGRESO A 1.ER AÑO 2027</h2>
+      <p style="margin-top: 5px; font-size: 9pt;">Matemática (10 ítems) y Prácticas del Lenguaje (10 ítems) &bull; Valor: 0.5 pts por ítem &bull; Máx: 10.0 pts</p>
+    </div>
+
+    <!-- Previsualización del Acta Oficial -->
+    <div class="table-responsive mt-3">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th class="text-center" style="width: 45px;">Ord.</th>
+            <th>Apellido y Nombre</th>
+            <th>DNI</th>
+            <th class="text-center">Aula</th>
+            <th class="text-center">Asistencia</th>
+            <th>Escuela de Origen</th>
+            <th class="text-center">Matemática (/5)</th>
+            <th class="text-center">Lengua (/5)</th>
+            <th class="text-center">Nota Final (/10)</th>
+            <th class="text-center">Condición</th>
+          </tr>
+        </thead>
+        <tbody id="exportPreviewTableBody">
+          <!-- Inyectado por JavaScript -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Bloque de Firmas para Impresión -->
+    <div class="official-signature-block" style="display: none;">
+      <div class="signature-box">
+        Firma Director / Vicedirector
+      </div>
+      <div class="signature-box">
+        Firma Docente Evaluador
+      </div>
+      <div class="signature-box">
+        Sello Institucional
+      </div>
+    </div>
+  </main>
+
+  <!-- ==========================================================================
+       SECCIÓN 6: ESQUEMA DE CARGA Y ASIGNACIONES
+       ========================================================================== -->
+  <main id="view-config" class="view-section">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.5rem;">
+
+      <!-- Tarjeta 1: Esquema de Doble Carga Cruzada -->
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h2 class="chart-card-title">👥 Esquema Oficial de Doble Carga Cruzada</h2>
+          <small class="text-muted">Distribución equitativa y balanceada entre los 5 preceptores</small>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Cada uno de los 311 exámenes cuenta con <strong>dos preceptores designados de forma independiente</strong> para corroborar la corrección. Al ingresar, el preceptor ve por defecto únicamente su cuota asignada:
+        </p>
+
+        <div class="table-responsive mb-3">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Preceptor / Preceptora</th>
+                <th class="text-center">UID Oficial</th>
+                <th class="text-center">Exámenes Asignados</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Cecilia</strong></td>
+                <td class="text-center"><code>1OaYaghi...</code></td>
+                <td class="text-center"><span class="badge badge-aula">125 alumnos</span></td>
+              </tr>
+              <tr>
+                <td><strong>Adrian</strong></td>
+                <td class="text-center"><code>5fqlfqIF...</code></td>
+                <td class="text-center"><span class="badge badge-aula">124 alumnos</span></td>
+              </tr>
+              <tr>
+                <td><strong>Benhamin</strong></td>
+                <td class="text-center"><code>UQj5suJs...</code></td>
+                <td class="text-center"><span class="badge badge-aula">124 alumnos</span></td>
+              </tr>
+              <tr>
+                <td><strong>Geraldine</strong></td>
+                <td class="text-center"><code>d57D2kOp...</code></td>
+                <td class="text-center"><span class="badge badge-aula">124 alumnos</span></td>
+              </tr>
+              <tr>
+                <td><strong>Karen</strong></td>
+                <td class="text-center"><code>M4uLZtXQ...</code></td>
+                <td class="text-center"><span class="badge badge-aula">124 alumnos</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="p-3" style="background: rgba(15, 23, 42, 0.6); border-radius: var(--radius-md); font-size: 0.8rem; color: var(--text-muted);">
+          Total de cargas requeridas: <strong>622 evaluaciones</strong> (311 exámenes &times; 2 cargas independientes).
+        </div>
+      </div>
+
+      <!-- Tarjeta 2: Estado del Servidor Cloud Firebase -->
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h2 class="chart-card-title">🔥 Servidor Cloud Firebase Firestore</h2>
+          <small class="text-muted">Conexión activa en tiempo real sin almacenamiento local</small>
+        </div>
+
+        <div class="p-3 mb-3" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md);">
+          <div style="font-weight: 700; color: #34d399; margin-bottom: 0.25rem;">
+            🟢 Base de Datos Conectada: exingutn2027
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">
+            Todos los exámenes se transmiten directamente a Google Cloud Firestore. Cada guardado de examen se refleja instantáneamente en la pantalla del Director y de los demás preceptores sin demora.
+          </p>
+        </div>
+
+        <div class="p-3" style="background: rgba(15, 23, 42, 0.6); border-radius: var(--radius-md); font-size: 0.8rem; color: var(--text-muted);">
+          <strong style="color: var(--text-main); display: block; margin-bottom: 0.35rem;">Autoridades del Sistema:</strong>
+          <div>&bull; Director: <code>uNHF999HedgtuI5BQDpOOH1eBD03</code></div>
+          <div>&bull; Vicedirector: <code>laVFIzdRPWPFUvPWBdGcZIlZPSA2</code></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ==========================================================================
+       MODAL: INSPECCIÓN Y RESOLUCIÓN DE DISCREPANCIAS (DIRECCIÓN)
+       ========================================================================== -->
+  <div id="modalAuditDiff" class="modal-backdrop">
+    <div class="modal-dialog-large">
+      <div class="modal-header">
+        <div>
+          <h2 id="auditModalStudentName" style="font-size: 1.25rem; font-weight: 700;">Auditoría Comparativa</h2>
+          <div id="auditModalStudentInfo" style="font-size: 0.825rem; color: var(--text-muted); margin-top: 0.2rem;"></div>
+        </div>
+        <button type="button" class="btn-close" onclick="window.AuditManager.closeModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="alert mb-3" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 0.75rem 1rem; font-size: 0.85rem; color: #fca5a5;">
+          ⚠️ <strong>Discrepancia detectada entre las dos cargas:</strong> Revisá el examen físico del alumno y seleccioná la opción oficial.
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th class="text-center" style="width: 45px;">Ítem</th>
+                <th>Tema / Contenido</th>
+                <th class="text-center">Clave Oficial</th>
+                <th class="text-center">Carga 1</th>
+                <th class="text-center">Carga 2</th>
+                <th class="text-center">Estado</th>
+                <th class="text-center">Resolución Oficial</th>
+              </tr>
+            </thead>
+            <tbody id="auditDiffTableBody">
+              <!-- Inyectado por JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer" id="auditResolutionControls">
+        <!-- Botones inyectados por JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenedor para Notificaciones Toast -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Carga de Datos y Scripts de la Aplicación -->
+  <script src="data/examConfig.js"></script>
+  <script src="data/students.js"></script>
+  <script src="js/firebase-sync.js"></script>
+  <script src="js/data-service.js"></script>
+  <script src="js/analytics.js"></script>
+  <script src="js/audit.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

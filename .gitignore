@@ -1,0 +1,7 @@
+# Documentos originales y temporales
+*.docx
+*.xlsx
+scratch_docx_dump.txt
+app/
+.DS_Store
+Thumbs.db
