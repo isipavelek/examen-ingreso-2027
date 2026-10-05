@@ -171,8 +171,9 @@
 
     // Calcula de forma determinística los 2 preceptores asignados a cada estudiante
     getAssignedPreceptorsForStudent(studentNro) {
-      const idx1 = (studentNro - 1) % 5;
-      const idx2 = studentNro % 5;
+      const len = PRECEPTORS_LIST.length || 7;
+      const idx1 = (studentNro - 1) % len;
+      const idx2 = studentNro % len;
       return [PRECEPTORS_LIST[idx1], PRECEPTORS_LIST[idx2]];
     }
 
@@ -235,17 +236,28 @@
     setupFirestoreListeners() {
       if (!this.isInitialized || !this.db) return;
 
+      const handleFirestoreError = (err, context) => {
+        console.error(`Error en listener Firestore (${context}):`, err);
+        if (err && (err.code === 'permission-denied' || (err.message && err.message.includes('insufficient permissions')))) {
+          this.syncStatus = 'locked';
+          this.statusMessage = '🔒 Permiso denegado: Faltan publicar las Reglas en Firebase Console';
+          this.triggerStatusChange();
+        }
+      };
+
       // 1. Escuchar colección de exámenes cargados
       this.unsubscribeSubmissions = this.db.collection('exam_submissions')
         .onSnapshot(snapshot => {
+          this.syncStatus = 'online';
+          this.statusMessage = '🟢 Firebase Firestore Conectado';
+          this.triggerStatusChange();
+
           const cloudSubs = [];
           snapshot.forEach(doc => {
             cloudSubs.push(doc.data());
           });
           window.DataService.setSubmissionsFromCloud(cloudSubs);
-        }, err => {
-          console.error('Error en listener Firestore submissions:', err);
-        });
+        }, err => handleFirestoreError(err, 'submissions'));
 
       // 2. Escuchar resoluciones oficiales de la Dirección
       this.unsubscribeResolutions = this.db.collection('exam_resolutions')
@@ -255,9 +267,7 @@
             cloudRes[doc.id] = doc.data();
           });
           window.DataService.setResolutionsFromCloud(cloudRes);
-        }, err => {
-          console.error('Error en listener Firestore resolutions:', err);
-        });
+        }, err => handleFirestoreError(err, 'resolutions'));
 
       // 3. Escuchar asistencias de alumnos
       this.unsubscribeAttendance = this.db.collection('students_attendance')
@@ -267,9 +277,7 @@
             attendMap[doc.id] = doc.data().asistio;
           });
           window.DataService.setAttendanceFromCloud(attendMap);
-        }, err => {
-          console.error('Error en listener Firestore attendance:', err);
-        });
+        }, err => handleFirestoreError(err, 'attendance'));
 
       // 4. Intentar vaciar cola de exámenes pendientes de sincronización
       this.flushPendingQueue();
@@ -317,21 +325,53 @@
     }
 
     async flushPendingQueue() {
-      if (!this.db) return;
+      if (!this.db) return { count: 0, synced: 0, failed: 0, error: 'Sin conexión a base de datos' };
       try {
-        const queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
-        if (queue.length === 0) return;
+        const localSaved = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
+        const pendingQueue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
+        
+        // Unir todo lo local asegurando que ningún examen quede sin subir
+        const toSyncMap = new Map();
+        localSaved.forEach(item => { if (item && item.id) toSyncMap.set(item.id, item); });
+        pendingQueue.forEach(item => { if (item && item.id) toSyncMap.set(item.id, item); });
 
-        const remaining = [];
-        for (const item of queue) {
+        if (toSyncMap.size === 0) return { count: 0, synced: 0, failed: 0 };
+
+        let syncedCount = 0;
+        const failed = [];
+        let lastError = null;
+
+        for (const [id, item] of toSyncMap.entries()) {
           try {
-            await this.db.collection('exam_submissions').doc(item.id).set(item, { merge: true });
+            await this.db.collection('exam_submissions').doc(id).set(item, { merge: true });
+            syncedCount++;
           } catch (e) {
-            remaining.push(item);
+            lastError = e;
+            failed.push(item);
           }
         }
-        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(remaining));
-      } catch (e) {}
+
+        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(failed));
+        
+        if (failed.length > 0 && lastError && (lastError.code === 'permission-denied' || lastError.message.includes('insufficient permissions'))) {
+          this.syncStatus = 'locked';
+          this.statusMessage = '🔒 Permiso denegado: Faltan publicar las Reglas en Firebase Console';
+          this.triggerStatusChange();
+        } else if (syncedCount > 0) {
+          this.syncStatus = 'online';
+          this.statusMessage = `🟢 Online (Sincronizados ${syncedCount} exámenes en la nube)`;
+          this.triggerStatusChange();
+        }
+
+        return { count: toSyncMap.size, synced: syncedCount, failed: failed.length, lastError };
+      } catch (e) {
+        console.error('Error en flushPendingQueue:', e);
+        return { error: e.message };
+      }
+    }
+
+    async syncAllLocalToCloud() {
+      return await this.flushPendingQueue();
     }
 
     async pushSubmission(submission) {

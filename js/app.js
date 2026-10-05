@@ -1620,12 +1620,44 @@
         badge.textContent = '🟢 Online (Firestore)';
         badge.className = 'status-pill pill-success';
         badge.title = detail.message;
+      } else if (detail.status === 'locked') {
+        badge.textContent = '🔒 Reglas bloqueadas en Firebase';
+        badge.className = 'status-pill pill-danger';
+        badge.title = 'Faltan habilitar las Reglas en Firebase Console (pestaña Reglas)';
       } else if (detail.status === 'connecting') {
         badge.textContent = '🟡 Conectando...';
         badge.className = 'status-pill pill-warning';
       } else {
         badge.textContent = '🔴 Desconectado';
         badge.className = 'status-pill pill-danger';
+      }
+    }
+
+    async triggerManualSync() {
+      const btn = document.getElementById('btnForceSync');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Subiendo...';
+      }
+
+      this.showToast('Conectando con Firebase Firestore y sincronizando exámenes locales...', 'info');
+
+      try {
+        const res = await window.FirebaseSyncService.syncAllLocalToCloud();
+        if (res.synced > 0) {
+          this.showToast(`✅ ¡Éxito! Se subieron ${res.synced} examen(es) a Firebase Firestore en la nube.`, 'success');
+        } else if (res.failed > 0) {
+          this.showToast(`🔒 Permiso denegado en Firebase. Por favor publicá las Reglas en Firebase Console (pestaña Reglas) para habilitar la escritura.`, 'danger');
+        } else {
+          this.showToast(`ℹ️ Todo al día: no hay exámenes pendientes de subir en esta computadora.`, 'info');
+        }
+      } catch (e) {
+        this.showToast(`Error al sincronizar: ${e.message}`, 'danger');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '☁️ Sincronizar Nube';
+        }
       }
     }
 
