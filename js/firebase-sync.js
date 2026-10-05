@@ -389,6 +389,8 @@
       try {
         await this.db.collection('exam_submissions').doc(docId).set(submission, { merge: true });
         this.removeFromPendingSyncQueue(docId);
+        // Sincronizar automáticamente en segundo plano cualquier otro examen pendiente
+        setTimeout(() => this.flushPendingQueue(), 100);
         return { docId, localOnly: false, success: true };
       } catch (err) {
         console.error('Error escribiendo en Firestore:', err);

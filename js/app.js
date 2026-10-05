@@ -533,16 +533,16 @@
         });
 
         if (submission.localOnly) {
-          this.showToast(`💾 Guardado localmente en tu equipo (Nota: ${submission.scoreTotal}). Firestore pendiente de reglas.`, 'warning');
+          this.showToast(`💾 Guardado localmente en tu equipo (Nota: ${submission.scoreTotal}). Sin conexión a Firebase.`, 'warning');
         } else if (otherSub) {
           const isMatch = Math.abs(submission.scoreTotal - otherSub.scoreTotal) < 0.01;
           if (isMatch) {
-            this.showToast(`✅ 2da Carga Guardada: Coincide con la corrección de ${otherSub.preceptorName} (${submission.scoreTotal} pts).`, 'success');
+            this.showToast(`☁️ Examen guardado y sincronizado en Firebase: ${this.selectedStudent.apellido} (Nota: ${submission.scoreTotal}). Coincide con ${otherSub.preceptorName}.`, 'success');
           } else {
-            this.showToast(`⚠️ 2da Carga Guardada con Discrepancia: Tu nota ${submission.scoreTotal} vs ${otherSub.scoreTotal} de ${otherSub.preceptorName}. Dirección revisará el examen.`, 'warning');
+            this.showToast(`☁️ Examen guardado y sincronizado en Firebase: Tu nota ${submission.scoreTotal} vs ${otherSub.scoreTotal} de ${otherSub.preceptorName} (Discrepancia para revisar).`, 'warning');
           }
         } else {
-          this.showToast(`✅ 1ra Carga Guardada: ${this.selectedStudent.apellido} (Nota: ${submission.scoreTotal}). Esperando colega.`, 'success');
+          this.showToast(`☁️ Examen guardado y sincronizado en Firebase: ${this.selectedStudent.apellido} (Nota: ${submission.scoreTotal}).`, 'success');
         }
 
         // Navegar automáticamente al siguiente examen pendiente
