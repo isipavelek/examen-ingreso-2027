@@ -10,7 +10,7 @@
       this.currentTab = 'carga';
       this.selectedStudent = null;
       this.currentAnswers = {};
-      this.currentTema = 'A';
+      this.currentTema = null;
       this.focusedQuestion = 1;
       this.searchQuery = '';
       this.selectedAulaFilter = 'all';
@@ -374,10 +374,10 @@
 
       if (mySub && !mySub.isAbsent) {
         this.currentAnswers = { ...mySub.answers };
-        this.currentTema = mySub.tema || 'A';
+        this.currentTema = mySub.tema || null;
       } else {
         this.currentAnswers = {};
-        this.currentTema = (student.nro % 2 === 0) ? 'B' : 'A';
+        this.currentTema = null;
       }
 
       this.focusedQuestion = 1;
@@ -416,8 +416,26 @@
       this.currentTema = tema;
       const btnA = document.getElementById('btnTemaA');
       const btnB = document.getElementById('btnTemaB');
+      const container = document.getElementById('temaSelectorContainer');
+      const promptBadge = document.getElementById('temaPromptBadge');
+
       if (btnA) btnA.classList.toggle('active', tema === 'A');
       if (btnB) btnB.classList.toggle('active', tema === 'B');
+
+      if (container) {
+        container.classList.toggle('unselected', !tema);
+      }
+
+      if (promptBadge) {
+        if (!tema) {
+          promptBadge.textContent = '⚠️ Elegí Tema';
+          promptBadge.className = 'tema-prompt-label pending';
+        } else {
+          promptBadge.textContent = `✅ Tema ${tema}`;
+          promptBadge.className = 'tema-prompt-label selected';
+        }
+      }
+
       this.renderAnswerSheet();
       this.updateLiveScorecard();
     }
@@ -456,14 +474,24 @@
       const totalEl = document.getElementById('liveScoreTotal');
       const statusEl = document.getElementById('liveScoreStatus');
 
-      if (mathEl) mathEl.textContent = `${calc.scoreMath.toFixed(1)} / 5.0`;
-      if (langEl) langEl.textContent = `${calc.scoreLang.toFixed(1)} / 5.0`;
-      if (totalEl) totalEl.textContent = calc.scoreTotal.toFixed(1);
+      if (!calc.hasTema) {
+        if (mathEl) mathEl.textContent = `- / 5.0`;
+        if (langEl) langEl.textContent = `- / 5.0`;
+        if (totalEl) totalEl.textContent = `-`;
+        if (statusEl) {
+          statusEl.textContent = 'ELEGIR TEMA A o B';
+          statusEl.className = 'score-badge badge-tema-pending';
+        }
+      } else {
+        if (mathEl) mathEl.textContent = `${calc.scoreMath.toFixed(1)} / 5.0`;
+        if (langEl) langEl.textContent = `${calc.scoreLang.toFixed(1)} / 5.0`;
+        if (totalEl) totalEl.textContent = calc.scoreTotal.toFixed(1);
 
-      if (statusEl) {
-        const isPassed = calc.scoreTotal >= 6.0;
-        statusEl.textContent = isPassed ? 'APROBADO' : 'NO ALCANZA';
-        statusEl.className = `score-badge ${isPassed ? 'badge-passed' : 'badge-failed'}`;
+        if (statusEl) {
+          const isPassed = calc.scoreTotal >= 6.0;
+          statusEl.textContent = isPassed ? 'APROBADO' : 'NO ALCANZA';
+          statusEl.className = `score-badge ${isPassed ? 'badge-passed' : 'badge-failed'}`;
+        }
       }
 
       // Detalle de doble carga
@@ -510,6 +538,18 @@
     async saveCurrentExam() {
       if (!this.selectedStudent) {
         this.showToast('Por favor, seleccioná un estudiante', 'warning');
+        return;
+      }
+
+      if (!this.currentTema || (this.currentTema !== 'A' && this.currentTema !== 'B')) {
+        this.showToast('⚠️ Debés seleccionar si el examen es TEMA A o TEMA B antes de guardar', 'danger');
+        const container = document.getElementById('temaSelectorContainer');
+        if (container) {
+          container.classList.remove('shake-highlight-tema');
+          void container.offsetWidth;
+          container.classList.add('shake-highlight-tema');
+          container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
         return;
       }
 
@@ -770,14 +810,19 @@
 
     buildQuestionRowHTML(q) {
       const selectedOpt = this.currentAnswers[q.n] || '';
-      const correctExpected = (this.currentTema === 'B') ? q.temaB : q.temaA;
+      const hasTema = this.currentTema === 'A' || this.currentTema === 'B';
+      const correctExpected = hasTema ? ((this.currentTema === 'B') ? q.temaB : q.temaA) : null;
       const isFocused = q.n === this.focusedQuestion;
       const isAnswered = !!selectedOpt;
-      const isCorrect = selectedOpt === correctExpected;
+      const isCorrect = hasTema && selectedOpt === correctExpected;
 
       let scoreFeedback = '';
       if (isAnswered) {
-        scoreFeedback = isCorrect ? '<span class="score-chip chip-correct">+0.5</span>' : '<span class="score-chip chip-incorrect">0.0</span>';
+        if (!hasTema) {
+          scoreFeedback = '<span class="score-chip chip-pending" title="Elegí Tema A o B para calcular puntaje">Sin Tema</span>';
+        } else {
+          scoreFeedback = isCorrect ? '<span class="score-chip chip-correct">+0.5</span>' : '<span class="score-chip chip-incorrect">0.0</span>';
+        }
       }
 
       return `

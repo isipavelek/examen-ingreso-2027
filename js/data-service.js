@@ -172,6 +172,28 @@
       }
 
       const questions = window.EXAM_CONFIG.questions;
+
+      if (!tema || (tema !== 'A' && tema !== 'B')) {
+        return {
+          scoreMath: null,
+          scoreLang: null,
+          scoreTotal: null,
+          correctCount: 0,
+          totalQuestions: questions.length,
+          hasTema: false,
+          details: questions.map(q => ({
+            n: q.n,
+            subject: q.subject,
+            topic: q.topic,
+            criterion: q.criterion,
+            expected: null,
+            answered: (answers[q.n] || '').trim().toUpperCase(),
+            isCorrect: false,
+            points: 0
+          }))
+        };
+      }
+
       let scoreMath = 0;
       let scoreLang = 0;
       let correctCount = 0;
@@ -213,6 +235,7 @@
         scoreTotal,
         correctCount,
         totalQuestions: questions.length,
+        hasTema: true,
         details
       };
     }
@@ -225,6 +248,10 @@
 
       const userProfile = this.currentUserProfile;
       if (!userProfile) throw new Error('No hay usuario autenticado en Firebase');
+
+      if (!isAbsent && (!tema || (tema !== 'A' && tema !== 'B'))) {
+        throw new Error('Debés seleccionar Tema A o Tema B para guardar la calificación.');
+      }
 
       // Actualizar asistencia
       if (isAbsent) {
