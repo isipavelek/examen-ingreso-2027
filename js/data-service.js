@@ -23,7 +23,12 @@
     init() {
       // Inicializar atributos auxiliares en estudiantes
       this.students.forEach(st => {
-        st.assignedPreceptors = window.FirebaseSyncService.getAssignedPreceptorsForStudent ? window.FirebaseSyncService.getAssignedPreceptorsForStudent(st.nro) : [];
+        const pair = window.FirebaseSyncService.getAssignedPreceptorsForStudent ? window.FirebaseSyncService.getAssignedPreceptorsForStudent(st.nro) : [];
+        st.assignedPreceptors = pair;
+        st.assignedUid1 = pair[0] ? pair[0].uid : '';
+        st.assignedName1 = pair[0] ? pair[0].name : '';
+        st.assignedUid2 = pair[1] ? pair[1].uid : '';
+        st.assignedName2 = pair[1] ? pair[1].name : '';
       });
     }
 
@@ -320,7 +325,10 @@
           loadsCount: 0,
           discrepancyCount: 0,
           discrepantQuestions: [],
-          submissions: []
+          submissions: [],
+          scoreTotal: null,
+          scoreMath: null,
+          scoreLang: null
         };
       }
 
@@ -439,8 +447,9 @@
       const preceptor = pList.find(p => p.uid === preceptorUid);
       if (!preceptor) return null;
 
-      // Meta por cantidad: ~124 exámenes cada uno (Cecilia 125 para sumar 622)
-      const targetQuota = preceptor.uid === '1OaYaghiGSTs0YAiKaRjIKJfk4g2' ? 125 : 124;
+      // Meta por cantidad: 622 cargas divididas equitativamente entre los 7 preceptores (~89 cada uno)
+      const count = pList.length || 7;
+      const targetQuota = Math.round(622 / count);
       const mySubs = this.submissions.filter(s => s.preceptorUid === preceptorUid);
       const myLoadedStudentIds = new Set(mySubs.map(s => s.studentId));
 

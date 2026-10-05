@@ -59,6 +59,12 @@
           <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('karen.pereira@inspt.utn.edu.ar')">
             👩‍🏫 Karen
           </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('nscuzzarello@rec.utn.edu.ar')">
+            👨‍🏫 Nestor
+          </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('emilia.caspani@inspt.utn.edu.ar')">
+            👩‍🏫 Emilia
+          </button>
         </div>
 
         <form id="firebaseLoginForm" onsubmit="window.app.handleFirebaseLogin(event)">
@@ -321,7 +327,7 @@
       <div class="kpi-card">
         <div class="kpi-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">🎯</div>
         <div class="kpi-data">
-          <span class="kpi-value" id="myKpiAssigned">124</span>
+          <span class="kpi-value" id="myKpiAssigned">89</span>
           <span class="kpi-label">Mi Meta de Carga</span>
         </div>
       </div>
@@ -335,7 +341,7 @@
       <div class="kpi-card">
         <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">⏳</div>
         <div class="kpi-data">
-          <span class="kpi-value" id="myKpiPending" style="color: #fbbf24;">124</span>
+          <span class="kpi-value" id="myKpiPending" style="color: #fbbf24;">89</span>
           <span class="kpi-label">Faltan para la Meta</span>
         </div>
       </div>
@@ -480,11 +486,13 @@
         <div class="filter-group">
           <select id="monitorPreceptorSelect" class="form-select-sm" style="width: 220px; font-weight: 700; color: #38bdf8;" onchange="window.app.renderMonitorPreceptoresTable()">
             <option value="all">👥 Todos los Preceptores (622)</option>
-            <option value="1OaYaghiGSTs0YAiKaRjIKJfk4g2">👩‍🏫 Cecilia (125)</option>
-            <option value="5fqlfqIFCHUwY2RfBK10HcoFu2H2">👨‍🏫 Adrian (124)</option>
-            <option value="UQj5suJsRmfbHlj7bm7nx5VOf692">👨‍🏫 Benhamin (124)</option>
-            <option value="d57D2kOpFWS8vMLVOBPWFb7kn2q1">👩‍🏫 Geraldine (124)</option>
-            <option value="M4uLZtXQO7ezGS5M8vRd0lF9Vxj2">👩‍🏫 Karen (124)</option>
+            <option value="1OaYaghiGSTs0YAiKaRjIKJfk4g2">👩‍🏫 Cecilia (~89)</option>
+            <option value="5fqlfqIFCHUwY2RfBK10HcoFu2H2">👨‍🏫 Adrian (~89)</option>
+            <option value="UQj5suJsRmfbHlj7bm7nx5VOf692">👨‍🏫 Benhamin (~89)</option>
+            <option value="d57D2kOpFWS8vMLVOBPWFb7kn2q1">👩‍🏫 Geraldine (~89)</option>
+            <option value="M4uLZtXQO7ezGS5M8vRd0lF9Vxj2">👩‍🏫 Karen (~89)</option>
+            <option value="kmKzi7TRkcTFEMnS3BQ3Gq5NDHe2">👨‍🏫 Nestor (~89)</option>
+            <option value="yPNVQ9Ct4nVOtzdE9SyXao8fwW12">👩‍🏫 Emilia (~89)</option>
           </select>
 
           <select id="monitorStatusFilter" class="form-select-sm" style="width: 200px;" onchange="window.app.renderMonitorPreceptoresTable()">
@@ -905,27 +913,37 @@
               <tr>
                 <td><strong>Cecilia</strong></td>
                 <td class="text-center"><code>1OaYaghi...</code></td>
-                <td class="text-center"><span class="badge badge-aula">125 alumnos</span></td>
+                <td class="text-center"><span class="badge badge-aula">89 alumnos</span></td>
               </tr>
               <tr>
                 <td><strong>Adrian</strong></td>
                 <td class="text-center"><code>5fqlfqIF...</code></td>
-                <td class="text-center"><span class="badge badge-aula">124 alumnos</span></td>
+                <td class="text-center"><span class="badge badge-aula">89 alumnos</span></td>
               </tr>
               <tr>
                 <td><strong>Benhamin</strong></td>
                 <td class="text-center"><code>UQj5suJs...</code></td>
-                <td class="text-center"><span class="badge badge-aula">124 alumnos</span></td>
+                <td class="text-center"><span class="badge badge-aula">89 alumnos</span></td>
               </tr>
               <tr>
                 <td><strong>Geraldine</strong></td>
                 <td class="text-center"><code>d57D2kOp...</code></td>
-                <td class="text-center"><span class="badge badge-aula">124 alumnos</span></td>
+                <td class="text-center"><span class="badge badge-aula">89 alumnos</span></td>
               </tr>
               <tr>
                 <td><strong>Karen</strong></td>
                 <td class="text-center"><code>M4uLZtXQ...</code></td>
-                <td class="text-center"><span class="badge badge-aula">124 alumnos</span></td>
+                <td class="text-center"><span class="badge badge-aula">89 alumnos</span></td>
+              </tr>
+              <tr>
+                <td><strong>Nestor</strong></td>
+                <td class="text-center"><code>kmKzi7TR...</code></td>
+                <td class="text-center"><span class="badge badge-aula">89 alumnos</span></td>
+              </tr>
+              <tr>
+                <td><strong>Emilia</strong></td>
+                <td class="text-center"><code>yPNVQ9Ct...</code></td>
+                <td class="text-center"><span class="badge badge-aula">88 alumnos</span></td>
               </tr>
             </tbody>
           </table>

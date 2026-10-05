@@ -848,7 +848,7 @@
           actionBtn = `<button class="btn btn-sm btn-light-pill" onclick="window.app.switchTab('carga'); window.app.selectStudent('${s.id}');">Cargar</button>`;
         }
 
-        const scoreDisplay = a.scoreTotal !== null ? `<strong>${a.scoreTotal.toFixed(1)}</strong> / 10` : '-';
+        const scoreDisplay = (a && typeof a.scoreTotal === 'number' && !isNaN(a.scoreTotal)) ? `<strong>${a.scoreTotal.toFixed(1)}</strong> / 10` : '-';
 
         html += `
           <tr>
@@ -973,7 +973,7 @@
       students.forEach((s, idx) => {
         const subs = window.DataService.getSubmissionsForStudent(s.id);
         const audit = window.DataService.getStudentAuditStatus(s.id);
-        const scoreStr = audit.scoreTotal !== null ? `<strong>${audit.scoreTotal.toFixed(1)}</strong>` : '<span class="text-muted">-</span>';
+        const scoreStr = (audit && typeof audit.scoreTotal === 'number' && !isNaN(audit.scoreTotal)) ? `<strong>${audit.scoreTotal.toFixed(1)}</strong>` : '<span class="text-muted">-</span>';
         const cleanPhone = String(s.telefono || '').replace(/\D/g, '');
 
         let loadsBadge = '';
@@ -1364,7 +1364,7 @@
           return `
             <div class="preceptor-card ${isSelected ? 'active-filter' : ''}" onclick="window.app.filterMonitorByPreceptor('${p.preceptor.uid}')" title="Clic para filtrar listado">
               <div class="preceptor-card-header">
-                <div class="preceptor-avatar-large" style="background: ${p.preceptor.uid === '1OaYaghiGSTs0YAiKaRjIKJfk4g2' ? '#10b981' : p.preceptor.uid === '5fqlfqIFCHUwY2RfBK10HcoFu2H2' ? '#06b6d4' : p.preceptor.uid === 'UQj5suJsRmfbHlj7bm7nx5VOf692' ? '#f59e0b' : p.preceptor.uid === 'd57D2kOpFWS8vMLVOBPWFb7kn2q1' ? '#ec4899' : '#8b5cf6'};">
+                <div class="preceptor-avatar-large" style="background: ${p.preceptor.color || '#8b5cf6'};">
                   ${initial}
                 </div>
                 <div class="preceptor-meta">
@@ -1568,11 +1568,11 @@
 
         let matchBadge = '';
         if (audit.status === 'coincidente') {
-          matchBadge = `<span class="badge badge-matched">✅ Coincidente (${audit.scoreTotal.toFixed(1)})</span>`;
+          matchBadge = `<span class="badge badge-matched">✅ Coincidente (${typeof audit.scoreTotal === 'number' ? audit.scoreTotal.toFixed(1) : '-'})</span>`;
         } else if (audit.status === 'discrepancia') {
           matchBadge = `<span class="badge badge-discrepancy">⚠️ Discrepancia (${audit.discrepancyCount})</span>`;
         } else if (audit.status === 'resuelta') {
-          matchBadge = `<span class="badge badge-resolved">⚖️ Resuelta (${audit.scoreTotal.toFixed(1)})</span>`;
+          matchBadge = `<span class="badge badge-resolved">⚖️ Resuelta (${typeof audit.scoreTotal === 'number' ? audit.scoreTotal.toFixed(1) : '-'})</span>`;
         } else if (audit.status === 'carga_simple') {
           matchBadge = `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">📝 Carga Simple (1/2)</span>`;
         } else {

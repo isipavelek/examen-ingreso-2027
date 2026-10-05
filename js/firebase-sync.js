@@ -81,16 +81,36 @@
       preceptorIndex: 4,
       isAdmin: false,
       color: "#8b5cf6"
+    },
+    "kmKzi7TRkcTFEMnS3BQ3Gq5NDHe2": {
+      uid: "kmKzi7TRkcTFEMnS3BQ3Gq5NDHe2",
+      name: "Nestor",
+      email: "nscuzzarello@rec.utn.edu.ar",
+      role: "preceptor",
+      preceptorIndex: 5,
+      isAdmin: false,
+      color: "#14b8a6"
+    },
+    "yPNVQ9Ct4nVOtzdE9SyXao8fwW12": {
+      uid: "yPNVQ9Ct4nVOtzdE9SyXao8fwW12",
+      name: "Emilia",
+      email: "emilia.caspani@inspt.utn.edu.ar",
+      role: "preceptor",
+      preceptorIndex: 6,
+      isAdmin: false,
+      color: "#f43f5e"
     }
   };
 
-  // Lista de 5 preceptores para la distribución cruzada
+  // Lista de 7 preceptores para la distribución equitativa de cargas cruzadas
   const PRECEPTORS_LIST = [
-    { uid: "1OaYaghiGSTs0YAiKaRjIKJfk4g2", name: "Cecilia", email: "est.sanmiguel@inspt.utn.edu.ar" },
-    { uid: "5fqlfqIFCHUwY2RfBK10HcoFu2H2", name: "Adrian", email: "adrian.escudero@inspt.utn.edu.ar" },
-    { uid: "UQj5suJsRmfbHlj7bm7nx5VOf692", name: "Benhamin", email: "benhamin.gimenez@inspt.utn.edu.ar" },
-    { uid: "d57D2kOpFWS8vMLVOBPWFb7kn2q1", name: "Geraldine", email: "geraldine.crousaz@inspt.utn.edu.ar" },
-    { uid: "M4uLZtXQO7ezGS5M8vRd0lF9Vxj2", name: "Karen", email: "karen.pereira@inspt.utn.edu.ar" }
+    { uid: "1OaYaghiGSTs0YAiKaRjIKJfk4g2", name: "Cecilia", email: "est.sanmiguel@inspt.utn.edu.ar", color: "#10b981" },
+    { uid: "5fqlfqIFCHUwY2RfBK10HcoFu2H2", name: "Adrian", email: "adrian.escudero@inspt.utn.edu.ar", color: "#06b6d4" },
+    { uid: "UQj5suJsRmfbHlj7bm7nx5VOf692", name: "Benhamin", email: "benhamin.gimenez@inspt.utn.edu.ar", color: "#f59e0b" },
+    { uid: "d57D2kOpFWS8vMLVOBPWFb7kn2q1", name: "Geraldine", email: "geraldine.crousaz@inspt.utn.edu.ar", color: "#ec4899" },
+    { uid: "M4uLZtXQO7ezGS5M8vRd0lF9Vxj2", name: "Karen", email: "karen.pereira@inspt.utn.edu.ar", color: "#8b5cf6" },
+    { uid: "kmKzi7TRkcTFEMnS3BQ3Gq5NDHe2", name: "Nestor", email: "nscuzzarello@rec.utn.edu.ar", color: "#14b8a6" },
+    { uid: "yPNVQ9Ct4nVOtzdE9SyXao8fwW12", name: "Emilia", email: "emilia.caspani@inspt.utn.edu.ar", color: "#f43f5e" }
   ];
 
   class FirebaseSyncService {
