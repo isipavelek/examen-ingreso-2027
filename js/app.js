@@ -1328,7 +1328,8 @@
       const allProgress = window.DataService.getAllPreceptorsProgress();
       if (!allProgress || allProgress.length === 0) return;
 
-      const totalNeeded = 622;
+      const totalNeeded = window.DataService.getTotalLoadsNeeded();
+      const totalExams = window.DataService.getTotalExamsTaken();
       const totalDone = allProgress.reduce((sum, p) => sum + (p ? p.loadedCount : 0), 0);
       const globalPercent = Math.round((totalDone / totalNeeded) * 100);
 
@@ -1349,7 +1350,9 @@
 
       if (kpiTotalDone) kpiTotalDone.textContent = `${totalDone} de ${totalNeeded}`;
       if (kpiGlobalPercent) kpiGlobalPercent.textContent = `${globalPercent}%`;
-      if (kpiDoubleComplete) kpiDoubleComplete.textContent = `${doubleCompleteCount} de 311 (${Math.round((doubleCompleteCount / 311) * 100)}%)`;
+      if (kpiDoubleComplete) kpiDoubleComplete.textContent = `${doubleCompleteCount} de ${totalExams} (${Math.round((doubleCompleteCount / totalExams) * 100)}%)`;
+      const kpiTotalNeeded = document.getElementById('monitorKpiTotalNeeded');
+      if (kpiTotalNeeded) kpiTotalNeeded.textContent = totalNeeded;
       if (kpiDiscrepancies) kpiDiscrepancies.textContent = discrepanciesCount;
 
       const cardsContainer = document.getElementById('preceptorsCardsContainer');
@@ -1469,9 +1472,8 @@
             },
             y: {
               stacked: true,
-              max: 130,
               grid: { color: 'rgba(255, 255, 255, 0.05)' },
-              ticks: { color: '#94a3b8', stepSize: 25 }
+              ticks: { color: '#94a3b8', stepSize: 10 }
             }
           },
           plugins: {

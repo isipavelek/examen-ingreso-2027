@@ -56,6 +56,15 @@
       return this.currentUserProfile && (this.currentUserProfile.isAdmin === true);
     }
 
+    // Cantidad real de exámenes rendidos (hojas físicas a corregir)
+    getTotalExamsTaken() {
+      return 223;
+    }
+
+    getTotalLoadsNeeded() {
+      return this.getTotalExamsTaken() * 2;
+    }
+
     // --- MÉTODOS DE SINCRONIZACIÓN FIRESTORE ---
 
     setSubmissionsFromCloud(cloudSubs) {
@@ -447,9 +456,13 @@
       const preceptor = pList.find(p => p.uid === preceptorUid);
       if (!preceptor) return null;
 
-      // Meta por cantidad: 622 cargas divididas equitativamente entre los 7 preceptores (~89 cada uno)
+      // Meta por cantidad: 223 exámenes rendidos × 2 cargas = 446, repartidas exactamente entre los preceptores
       const count = pList.length || 7;
-      const targetQuota = Math.round(622 / count);
+      const totalLoads = this.getTotalLoadsNeeded();
+      const base = Math.floor(totalLoads / count);
+      const remainder = totalLoads % count;
+      const pIdx = pList.findIndex(p => p.uid === preceptorUid);
+      const targetQuota = base + (pIdx < remainder ? 1 : 0);
       const mySubs = this.submissions.filter(s => s.preceptorUid === preceptorUid);
       const myLoadedStudentIds = new Set(mySubs.map(s => s.studentId));
 
