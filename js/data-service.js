@@ -8,7 +8,12 @@
   class DataService {
     constructor() {
       this.students = window.INITIAL_STUDENTS || [];
-      this.submissions = [];
+      // Cargar respaldo local previo de localStorage
+      let localSubs = [];
+      try {
+        localSubs = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
+      } catch (e) {}
+      this.submissions = localSubs;
       this.resolutions = {}; // studentId -> resolution object
       this.currentUserProfile = null;
       this.listeners = new Set();
@@ -16,14 +21,9 @@
     }
 
     init() {
-      // Asociar a cada estudiante sus 2 preceptores asignados
+      // Inicializar atributos auxiliares en estudiantes
       this.students.forEach(st => {
-        const assigned = window.FirebaseSyncService.getAssignedPreceptorsForStudent(st.nro);
-        st.assignedPreceptors = assigned;
-        st.assignedUid1 = assigned[0].uid;
-        st.assignedName1 = assigned[0].name;
-        st.assignedUid2 = assigned[1].uid;
-        st.assignedName2 = assigned[1].name;
+        st.assignedPreceptors = window.FirebaseSyncService.getAssignedPreceptorsForStudent ? window.FirebaseSyncService.getAssignedPreceptorsForStudent(st.nro) : [];
       });
     }
 
@@ -54,7 +54,20 @@
     // --- MÉTODOS DE SINCRONIZACIÓN FIRESTORE ---
 
     setSubmissionsFromCloud(cloudSubs) {
-      this.submissions = cloudSubs || [];
+      const map = new Map();
+      // 1. Cargar locales
+      (this.submissions || []).forEach(s => {
+        if (s && s.studentId && s.preceptorUid) {
+          map.set(`${s.studentId}_${s.preceptorUid}`, s);
+        }
+      });
+      // 2. Unir y sobreescribir con los de la nube
+      (cloudSubs || []).forEach(s => {
+        if (s && s.studentId && s.preceptorUid) {
+          map.set(`${s.studentId}_${s.preceptorUid}`, s);
+        }
+      });
+      this.submissions = Array.from(map.values());
       this.notify();
     }
 
@@ -228,11 +241,23 @@
         notes
       };
 
-      // Guardar en Firestore directamente
-      await window.FirebaseSyncService.pushSubmission(submissionRecord);
-      await window.FirebaseSyncService.pushAttendance(studentId, student.asistio);
+      // 1. Guardar de inmediato en memoria local de la app para actualización instantánea
+      const existingIdx = this.submissions.findIndex(s => s.studentId === studentId && s.preceptorUid === userProfile.uid);
+      if (existingIdx >= 0) {
+        this.submissions[existingIdx] = submissionRecord;
+      } else {
+        this.submissions.push(submissionRecord);
+      }
+      this.notify();
 
-      return submissionRecord;
+      // 2. Persistir local y en la nube
+      const cloudResult = await window.FirebaseSyncService.pushSubmission(submissionRecord);
+      window.FirebaseSyncService.pushAttendance(studentId, student.asistio);
+
+      return {
+        ...submissionRecord,
+        ...cloudResult
+      };
     }
 
     getSubmissionsForStudent(studentId) {
@@ -407,14 +432,15 @@
       });
     }
 
-    // --- MONITOREO DE PROGRESO DE PRECEPTORES (DOBLE CARGA) ---
+    // --- MONITOREO DE PROGRESO DE PRECEPTORES (REPARTICIÓN POR CANTIDAD) ---
 
     getPreceptorProgress(preceptorUid) {
       const pList = window.FirebaseSyncService.getPreceptorsList();
       const preceptor = pList.find(p => p.uid === preceptorUid);
       if (!preceptor) return null;
 
-      const assigned = this.students.filter(s => s.assignedUid1 === preceptorUid || s.assignedUid2 === preceptorUid);
+      // Meta por cantidad: ~124 exámenes cada uno (Cecilia 125 para sumar 622)
+      const targetQuota = preceptor.uid === '1OaYaghiGSTs0YAiKaRjIKJfk4g2' ? 125 : 124;
       const mySubs = this.submissions.filter(s => s.preceptorUid === preceptorUid);
       const myLoadedStudentIds = new Set(mySubs.map(s => s.studentId));
 
@@ -422,18 +448,23 @@
       let discrepancyWithPartner = 0;
       let partnerPending = 0;
 
-      const studentDetails = assigned.map(st => {
-        const isLoadedByMe = myLoadedStudentIds.has(st.id);
-        const mySub = mySubs.find(s => s.studentId === st.id);
+      const studentDetails = this.students.map(st => {
+        const subs = this.getSubmissionsForStudent(st.id);
+        const mySub = subs.find(s => s.preceptorUid === preceptorUid);
+        const otherSubs = subs.filter(s => s.preceptorUid !== preceptorUid);
+        const isLoadedByMe = !!mySub;
+        const audit = this.getStudentAuditStatus(st.id);
 
-        const partnerUid = st.assignedUid1 === preceptorUid ? st.assignedUid2 : st.assignedUid1;
-        const partnerName = st.assignedUid1 === preceptorUid ? st.assignedName2 : st.assignedName1;
-        const partnerSub = this.submissions.find(s => s.studentId === st.id && s.preceptorUid === partnerUid);
-        const isLoadedByPartner = !!partnerSub;
+        let matchStatus = 'unloaded';
+        let partnerName = '-';
+        let partnerScore = null;
 
-        let matchStatus = 'pending';
-        if (isLoadedByMe && isLoadedByPartner) {
-          const audit = this.getStudentAuditStatus(st.id);
+        if (otherSubs.length > 0) {
+          partnerName = otherSubs.map(x => x.preceptorName).join(', ');
+          partnerScore = otherSubs[0].scoreTotal;
+        }
+
+        if (isLoadedByMe && otherSubs.length > 0) {
           if (audit.status === 'coincidente') {
             matchStatus = 'coincidente';
             matchedWithPartner++;
@@ -443,31 +474,39 @@
           } else {
             matchStatus = audit.status;
           }
-        } else if (isLoadedByMe && !isLoadedByPartner) {
+        } else if (isLoadedByMe && otherSubs.length === 0) {
           matchStatus = 'partner_pending';
           partnerPending++;
-        } else if (!isLoadedByMe && isLoadedByPartner) {
-          matchStatus = 'my_pending';
+        } else if (!isLoadedByMe && otherSubs.length === 1) {
+          matchStatus = 'needs_second_load';
+        } else if (!isLoadedByMe && otherSubs.length >= 2) {
+          matchStatus = 'already_completed_by_others';
+        } else {
+          matchStatus = 'unloaded';
         }
 
         return {
           student: st,
           isLoadedByMe,
           myScore: mySub ? mySub.scoreTotal : null,
-          partnerUid,
           partnerName,
-          isLoadedByPartner,
-          partnerScore: partnerSub ? partnerSub.scoreTotal : null,
+          partnerScore,
+          loadsCount: subs.length,
           matchStatus
         };
       });
 
+      const loadedCount = myLoadedStudentIds.size;
+      const pendingCount = Math.max(0, targetQuota - loadedCount);
+      const percent = Math.min(100, Math.round((loadedCount / targetQuota) * 100));
+
       return {
         preceptor,
-        totalAssigned: assigned.length,
-        loadedCount: myLoadedStudentIds.size,
-        pendingCount: assigned.length - myLoadedStudentIds.size,
-        percent: assigned.length > 0 ? Math.round((myLoadedStudentIds.size / assigned.length) * 100) : 0,
+        targetQuota,
+        totalAssigned: targetQuota,
+        loadedCount,
+        pendingCount,
+        percent,
         matchedWithPartner,
         discrepancyWithPartner,
         partnerPending,

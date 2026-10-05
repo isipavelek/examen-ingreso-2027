@@ -250,33 +250,115 @@
         }, err => {
           console.error('Error en listener Firestore attendance:', err);
         });
+
+      // 4. Intentar vaciar cola de exámenes pendientes de sincronización
+      this.flushPendingQueue();
+      if (!this.syncInterval) {
+        this.syncInterval = setInterval(() => this.flushPendingQueue(), 15000);
+      }
     }
 
-    // --- ESCRITURA DIRECTA EN FIRESTORE ---
+    // --- ESCRITURA EN FIRESTORE CON COPIA LOCAL DE SEGURIDAD ---
+
+    saveToLocalStorage(submission) {
+      try {
+        const localList = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
+        const existingIdx = localList.findIndex(s => s.studentId === submission.studentId && s.preceptorUid === submission.preceptorUid);
+        if (existingIdx >= 0) {
+          localList[existingIdx] = submission;
+        } else {
+          localList.push(submission);
+        }
+        localStorage.setItem('saved_exam_submissions', JSON.stringify(localList));
+      } catch (e) {
+        console.warn('No se pudo guardar en localStorage:', e);
+      }
+    }
+
+    addToPendingSyncQueue(submission) {
+      try {
+        const queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
+        const existingIdx = queue.findIndex(s => s.studentId === submission.studentId && s.preceptorUid === submission.preceptorUid);
+        if (existingIdx >= 0) {
+          queue[existingIdx] = submission;
+        } else {
+          queue.push(submission);
+        }
+        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(queue));
+      } catch (e) {}
+    }
+
+    removeFromPendingSyncQueue(docId) {
+      try {
+        const queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
+        const filtered = queue.filter(item => item.id !== docId);
+        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(filtered));
+      } catch (e) {}
+    }
+
+    async flushPendingQueue() {
+      if (!this.db) return;
+      try {
+        const queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
+        if (queue.length === 0) return;
+
+        const remaining = [];
+        for (const item of queue) {
+          try {
+            await this.db.collection('exam_submissions').doc(item.id).set(item, { merge: true });
+          } catch (e) {
+            remaining.push(item);
+          }
+        }
+        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(remaining));
+      } catch (e) {}
+    }
 
     async pushSubmission(submission) {
-      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
-      // ID del documento: studentId_preceptorUid
       const docId = `${submission.studentId}_${submission.preceptorUid}`;
       submission.id = docId;
-      await this.db.collection('exam_submissions').doc(docId).set(submission, { merge: true });
-      return docId;
+
+      // 1. Asegurar copia de seguridad local permanente en el navegador
+      this.saveToLocalStorage(submission);
+
+      if (!this.db) {
+        this.addToPendingSyncQueue(submission);
+        return { docId, localOnly: true, error: 'Firestore no conectado' };
+      }
+
+      try {
+        await this.db.collection('exam_submissions').doc(docId).set(submission, { merge: true });
+        this.removeFromPendingSyncQueue(docId);
+        return { docId, localOnly: false, success: true };
+      } catch (err) {
+        console.error('Error escribiendo en Firestore:', err);
+        this.addToPendingSyncQueue(submission);
+        return { docId, localOnly: true, error: err.message };
+      }
     }
 
     async pushResolution(studentId, resolutionData) {
       if (!this.db) throw new Error('Base de datos Firestore no conectada.');
-      await this.db.collection('exam_resolutions').doc(studentId).set(resolutionData, { merge: true });
+      try {
+        await this.db.collection('exam_resolutions').doc(studentId).set(resolutionData, { merge: true });
+      } catch (err) {
+        console.warn('Error guardando resolución:', err);
+      }
     }
 
     async pushAttendance(studentId, asistio) {
-      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
-      await this.db.collection('students_attendance').doc(studentId).set({
-        studentId,
-        asistio,
-        updatedBy: this.currentProfile ? this.currentProfile.name : 'Usuario',
-        updatedByUid: this.currentUser ? this.currentUser.uid : '',
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+      if (!this.db) return;
+      try {
+        await this.db.collection('students_attendance').doc(studentId).set({
+          studentId,
+          asistio,
+          updatedBy: this.currentProfile ? this.currentProfile.name : 'Usuario',
+          updatedByUid: this.currentUser ? this.currentUser.uid : '',
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Error guardando asistencia en Firestore:', err);
+      }
     }
 
     triggerStatusChange() {

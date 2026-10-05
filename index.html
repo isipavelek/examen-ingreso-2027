@@ -151,11 +151,15 @@
       <!-- Columna 1: Búsqueda y Lista de Estudiantes -->
       <aside class="students-sidebar-card">
         <div class="sidebar-header">
-          <!-- Filtro de Asignación: Mis Asignados vs Todos -->
+          <!-- Filtro de Estado de Carga -->
           <div class="mb-2">
-            <select id="studentScopeFilter" class="form-select-sm" title="Alcance de visualización" style="background: rgba(30, 41, 59, 0.9); font-weight: 600; color: #38bdf8;">
-              <option value="assigned">🎯 Mis Asignados (Doble Carga)</option>
+            <select id="studentScopeFilter" class="form-select-sm" title="Filtrar por Estado de Carga" style="background: rgba(30, 41, 59, 0.9); font-weight: 600; color: #38bdf8;">
               <option value="all">📋 Todos los Estudiantes (311)</option>
+              <option value="need_second">⏳ Necesitan 2da Carga (tienen 1/2)</option>
+              <option value="zero_loads">⏳ Sin Evaluar (0 de 2)</option>
+              <option value="my_pending">🎯 Pendientes para Mí (< 2 cargas)</option>
+              <option value="loaded_by_me">✍️ Ya Evaluados por Mí</option>
+              <option value="completed">✅ Doble Carga Completa (2/2)</option>
             </select>
           </div>
 
@@ -189,7 +193,7 @@
 
             <!-- Banner de Preceptores Asignados para Doble Carga -->
             <div id="selectedStudentAssignedBadge" class="assigned-dual-banner">
-              🎯 Asignados para Doble Carga: <strong id="assignedPreceptorsNames">-</strong>
+              🎯 Estado Doble Carga: <strong id="assignedPreceptorsNames">Sin evaluar (0 de 2)</strong>
             </div>
 
             <div class="student-banner-meta">
@@ -211,6 +215,9 @@
             </div>
           </div>
         </div>
+
+        <!-- Banner de aviso si ya 2 colegas calificaron este examen -->
+        <div id="examAlreadyCompletedBanner" class="alert-completed-notice" style="display: none;"></div>
 
         <!-- Grilla de Respuestas 1 a 20 -->
         <div id="answerSheetRows" class="answer-sheet-container">
@@ -314,46 +321,48 @@
       <div class="kpi-card">
         <div class="kpi-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">🎯</div>
         <div class="kpi-data">
-          <span class="kpi-value" id="myKpiAssigned">0</span>
-          <span class="kpi-label">Exámenes Asignados a Mí</span>
+          <span class="kpi-value" id="myKpiAssigned">124</span>
+          <span class="kpi-label">Mi Meta de Carga</span>
         </div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">✍️</div>
         <div class="kpi-data">
           <span class="kpi-value" id="myKpiLoaded" style="color: #34d399;">0</span>
-          <span class="kpi-label">Cargados por Mí</span>
+          <span class="kpi-label">Llevo Evaluados</span>
         </div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">⏳</div>
         <div class="kpi-data">
-          <span class="kpi-value" id="myKpiPending" style="color: #fbbf24;">0</span>
-          <span class="kpi-label">Pendientes por Cargar</span>
+          <span class="kpi-value" id="myKpiPending" style="color: #fbbf24;">124</span>
+          <span class="kpi-label">Faltan para la Meta</span>
         </div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon" style="background: rgba(139, 92, 246, 0.15); color: #c084fc;">🤝</div>
         <div class="kpi-data">
           <span class="kpi-value" id="myKpiMatched" style="color: #c084fc;">0</span>
-          <span class="kpi-label">Coincidentes con 2do Preceptor</span>
+          <span class="kpi-label">Coincidentes con Colega (100%)</span>
         </div>
       </div>
     </div>
 
-    <!-- Barra de Filtros de Estudiantes Asignados -->
+    <!-- Barra de Filtros de Estudiantes -->
     <div class="audit-toolbar">
       <div class="filter-group">
-        <input type="text" id="myProgressSearchInput" class="form-control-search" style="width: 260px;" placeholder="Buscar en mis asignados..." oninput="window.app.renderMiProgresoView()">
+        <input type="text" id="myProgressSearchInput" class="form-control-search" style="width: 260px;" placeholder="Buscar estudiante o DNI..." oninput="window.app.renderMiProgresoView()">
         <select id="myProgressAulaFilter" class="form-select-sm" style="width: 170px;" onchange="window.app.renderMiProgresoView()">
           <option value="all">Todas las Aulas</option>
         </select>
-        <select id="myProgressStatusFilter" class="form-select-sm" style="width: 220px;" onchange="window.app.renderMiProgresoView()">
-          <option value="all">Todos los Estados</option>
-          <option value="pending_me">⏳ Pendientes de mi carga</option>
+        <select id="myProgressStatusFilter" class="form-select-sm" style="width: 250px;" onchange="window.app.renderMiProgresoView()">
+          <option value="all">📋 Todos los Estudiantes (311)</option>
           <option value="loaded_me">✍️ Ya cargados por mí</option>
+          <option value="need_second">⏳ Necesitan 2da carga (¡calificalo!)</option>
+          <option value="zero_loads">⏳ Sin evaluar (0 de 2)</option>
           <option value="matched">✅ Coincidentes (100%)</option>
           <option value="discrepancy">⚠️ Con discrepancia</option>
+          <option value="already_completed">⚠️ Ya completados por otros (2/2)</option>
         </select>
       </div>
 
@@ -755,16 +764,22 @@
   <main id="view-estudiantes" class="view-section">
     <div class="audit-toolbar">
       <div class="filter-group">
-        <input type="text" id="dirSearchInput" class="form-control-search" style="width: 250px;" placeholder="Buscar por DNI, alumno o tutor..." oninput="window.app.renderStudentsDirectory()">
-        <select id="dirAulaFilter" class="form-select-sm" style="width: 150px;" onchange="window.app.renderStudentsDirectory()">
+        <input type="text" id="dirSearchInput" class="form-control-search" style="width: 230px;" placeholder="Buscar por DNI, alumno o tutor..." oninput="window.app.renderStudentsDirectory()">
+        <select id="dirAulaFilter" class="form-select-sm" style="width: 140px;" onchange="window.app.renderStudentsDirectory()">
           <option value="all">Todas las Aulas</option>
         </select>
-        <select id="dirAttendFilter" class="form-select-sm" style="width: 150px;" onchange="window.app.renderStudentsDirectory()">
+        <select id="dirStatusFilter" class="form-select-sm" style="width: 170px;" onchange="window.app.renderStudentsDirectory()">
+          <option value="all">Todas las Cargas</option>
+          <option value="need_second">⏳ Falta 2da Carga (1/2)</option>
+          <option value="zero_loads">⏳ Sin Cargar (0/2)</option>
+          <option value="completed">✅ Doble Carga (2/2)</option>
+        </select>
+        <select id="dirAttendFilter" class="form-select-sm" style="width: 140px;" onchange="window.app.renderStudentsDirectory()">
           <option value="all">Toda Asistencia</option>
           <option value="presente">Solo Presentes</option>
           <option value="ausente">Solo Ausentes</option>
         </select>
-        <select id="dirSchoolFilter" class="form-select-sm" style="width: 250px;" onchange="window.app.renderStudentsDirectory()">
+        <select id="dirSchoolFilter" class="form-select-sm" style="width: 220px;" onchange="window.app.renderStudentsDirectory()">
           <option value="all">Todas las Escuelas de Origen</option>
         </select>
       </div>
@@ -782,11 +797,11 @@
             <th>Estudiante</th>
             <th>DNI</th>
             <th class="text-center">Aula</th>
-            <th>Preceptores Asignados</th>
+            <th class="text-center">Cargas Registradas</th>
             <th class="text-center">Asistencia</th>
             <th>Escuela Primaria de Origen</th>
             <th class="text-center">Nota Examen</th>
-            <th class="text-end">Contacto Directo</th>
+            <th class="text-end">Acción y Contacto</th>
           </tr>
         </thead>
         <tbody id="directoryTableBody">

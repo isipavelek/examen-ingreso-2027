@@ -1322,6 +1322,19 @@ h1, h2, h3, h4, h5, h6 {
   opacity: 0.85;
 }
 
+.alert-completed-notice {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1.15rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
 .btn-logout-header {
   background: transparent;
   border: none;

@@ -249,22 +249,18 @@
     onUserLoggedIn(profile) {
       this.updateUserProfileUI();
 
-      // Si es preceptor, seleccionar por defecto "Mis Asignados" e ir a "Mi Progreso"
+      // Permitir ver todos los estudiantes
+      this.selectedScopeFilter = 'all';
+      const scopeSelect = document.getElementById('studentScopeFilter');
+      if (scopeSelect) {
+        scopeSelect.value = 'all';
+        scopeSelect.disabled = false;
+      }
+
+      // Si es preceptor, ir a Carga Ágil
       if (!profile.isAdmin) {
-        this.selectedScopeFilter = 'assigned';
-        const scopeSelect = document.getElementById('studentScopeFilter');
-        if (scopeSelect) {
-          scopeSelect.value = 'assigned';
-          scopeSelect.disabled = true; // Bloqueado estrictamente a su cuota de carga asignada
-        }
-        this.switchTab('mi-progreso');
+        this.switchTab('carga');
       } else {
-        this.selectedScopeFilter = 'all';
-        const scopeSelect = document.getElementById('studentScopeFilter');
-        if (scopeSelect) {
-          scopeSelect.value = 'all';
-          scopeSelect.disabled = false;
-        }
         this.switchTab('monitor-preceptores');
       }
 
@@ -322,12 +318,29 @@
     getVisibleStudents() {
       let students = window.DataService.getStudents();
       const user = window.DataService.getCurrentUser();
+      const myUid = user ? user.uid : '';
 
-      // Restricción por rol: Los preceptores SOLO ven los exámenes asignados a su cargo para la doble carga
-      if (user && !user.isAdmin) {
-        students = students.filter(s => s.assignedUid1 === user.uid || s.assignedUid2 === user.uid);
-      } else if (this.selectedScopeFilter === 'assigned' && user) {
-        students = students.filter(s => s.assignedUid1 === user.uid || s.assignedUid2 === user.uid);
+      // Filtro de alcance por Estado de Carga
+      if (this.selectedScopeFilter === 'need_second') {
+        // Necesitan 2da carga: tienen exactamente 1 carga, y NO fue cargada por el usuario actual
+        students = students.filter(s => {
+          const subs = window.DataService.getSubmissionsForStudent(s.id);
+          return subs.length === 1 && !subs.some(x => x.preceptorUid === myUid);
+        });
+      } else if (this.selectedScopeFilter === 'zero_loads') {
+        students = students.filter(s => window.DataService.getSubmissionsForStudent(s.id).length === 0);
+      } else if (this.selectedScopeFilter === 'my_pending') {
+        students = students.filter(s => {
+          const subs = window.DataService.getSubmissionsForStudent(s.id);
+          return subs.length < 2 && !subs.some(x => x.preceptorUid === myUid);
+        });
+      } else if (this.selectedScopeFilter === 'loaded_by_me') {
+        students = students.filter(s => {
+          const subs = window.DataService.getSubmissionsForStudent(s.id);
+          return subs.some(x => x.preceptorUid === myUid);
+        });
+      } else if (this.selectedScopeFilter === 'completed') {
+        students = students.filter(s => window.DataService.getSubmissionsForStudent(s.id).length >= 2);
       }
 
       // Filtro de Aula
@@ -457,22 +470,38 @@
       const detailsBox = document.getElementById('currentStudentDualLoadDetails');
       if (detailsBox) {
         const subs = window.DataService.getSubmissionsForStudent(this.selectedStudent.id);
-        const s = this.selectedStudent;
+        const currentUser = window.DataService.getCurrentUser();
+        const myUid = currentUser ? currentUser.uid : '';
 
-        const sub1 = subs.find(x => x.preceptorUid === s.assignedUid1);
-        const sub2 = subs.find(x => x.preceptorUid === s.assignedUid2);
+        let loadsHtml = '';
+        if (subs.length === 0) {
+          loadsHtml = '<div class="text-muted small">Sin calificaciones registradas aún (se requieren 2 de colegas distintos).</div>';
+        } else {
+          loadsHtml = subs.map(sub => {
+            const isMe = sub.preceptorUid === myUid;
+            return `
+              <div class="d-flex justify-content-between mb-1 small">
+                <span><strong>${sub.preceptorName || 'Preceptor'}</strong>${isMe ? ' (Vos)' : ''}:</span>
+                <span style="color: #34d399;">✅ Nota: ${sub.scoreTotal !== null ? sub.scoreTotal.toFixed(1) : '-'}</span>
+              </div>
+            `;
+          }).join('');
+        }
+
+        let summaryBadge = '';
+        if (subs.length === 0) {
+          summaryBadge = '<span class="status-pill pill-warning">⏳ 0 de 2 mínimas</span>';
+        } else if (subs.length === 1) {
+          summaryBadge = '<span class="status-pill pill-warning">⚡ 1 de 2 (Requiere 2da carga)</span>';
+        } else {
+          summaryBadge = '<span class="status-pill pill-success">✅ 2 de 2 Completas</span>';
+        }
 
         detailsBox.innerHTML = `
-          <div class="d-flex justify-content-between mb-1">
-            <span>${s.assignedName1}:</span>
-            <span>${sub1 ? `✅ Nota: ${sub1.scoreTotal}` : '⏳ Pendiente'}</span>
-          </div>
-          <div class="d-flex justify-content-between mb-1">
-            <span>${s.assignedName2}:</span>
-            <span>${sub2 ? `✅ Nota: ${sub2.scoreTotal}` : '⏳ Pendiente'}</span>
-          </div>
-          <div class="mt-2 pt-1 border-top" style="border-color: rgba(255,255,255,0.1) !important;">
-            <strong>Cargas registradas:</strong> ${subs.length} de 2
+          <div class="mb-2">${loadsHtml}</div>
+          <div class="pt-2 border-top d-flex justify-content-between align-items-center" style="border-color: rgba(255,255,255,0.1) !important;">
+            <strong>Control:</strong>
+            ${summaryBadge}
           </div>
         `;
       }
@@ -490,6 +519,11 @@
         if (!confirmSave) return;
       }
 
+      const prevSubs = window.DataService.getSubmissionsForStudent(this.selectedStudent.id);
+      const currentUser = window.DataService.getCurrentUser();
+      const myUid = currentUser ? currentUser.uid : '';
+      const otherSub = prevSubs.find(s => s.preceptorUid !== myUid);
+
       try {
         const submission = await window.DataService.saveExamSubmission({
           studentId: this.selectedStudent.id,
@@ -498,11 +532,24 @@
           isAbsent: false
         });
 
-        this.showToast(`Examen guardado en Firestore: ${this.selectedStudent.apellido} (Nota: ${submission.scoreTotal})`, 'success');
-        this.navigateStudent(1);
+        if (submission.localOnly) {
+          this.showToast(`💾 Guardado localmente en tu equipo (Nota: ${submission.scoreTotal}). Firestore pendiente de reglas.`, 'warning');
+        } else if (otherSub) {
+          const isMatch = Math.abs(submission.scoreTotal - otherSub.scoreTotal) < 0.01;
+          if (isMatch) {
+            this.showToast(`✅ 2da Carga Guardada: Coincide con la corrección de ${otherSub.preceptorName} (${submission.scoreTotal} pts).`, 'success');
+          } else {
+            this.showToast(`⚠️ 2da Carga Guardada con Discrepancia: Tu nota ${submission.scoreTotal} vs ${otherSub.scoreTotal} de ${otherSub.preceptorName}. Dirección revisará el examen.`, 'warning');
+          }
+        } else {
+          this.showToast(`✅ 1ra Carga Guardada: ${this.selectedStudent.apellido} (Nota: ${submission.scoreTotal}). Esperando colega.`, 'success');
+        }
+
+        // Navegar automáticamente al siguiente examen pendiente
+        this.navigateNextPending();
       } catch (err) {
         console.error(err);
-        this.showToast('Error guardando en Firestore: ' + err.message, 'danger');
+        this.showToast('Error guardando examen: ' + err.message, 'danger');
       }
     }
 
@@ -518,10 +565,48 @@
           isAbsent: true
         });
 
-        this.showToast(`${this.selectedStudent.apellido} registrado como Ausente en Firestore`, 'info');
-        this.navigateStudent(1);
+        this.showToast(`${this.selectedStudent.apellido} registrado como Ausente`, 'info');
+        this.navigateNextPending();
       } catch (err) {
         this.showToast('Error: ' + err.message, 'danger');
+      }
+    }
+
+    navigateNextPending() {
+      const allStudents = window.DataService.getStudents();
+      const currentUser = window.DataService.getCurrentUser();
+      const myUid = currentUser ? currentUser.uid : '';
+
+      const curIdx = this.selectedStudent ? allStudents.findIndex(s => s.id === this.selectedStudent.id) : -1;
+      let nextStudent = null;
+
+      // Buscar de la posición actual hacia adelante
+      for (let i = curIdx + 1; i < allStudents.length; i++) {
+        const st = allStudents[i];
+        const subs = window.DataService.getSubmissionsForStudent(st.id);
+        if (subs.length < 2 && !subs.some(x => x.preceptorUid === myUid)) {
+          nextStudent = st;
+          break;
+        }
+      }
+
+      // Si no se encontró adelante, buscar desde el principio
+      if (!nextStudent) {
+        for (let i = 0; i <= curIdx; i++) {
+          const st = allStudents[i];
+          const subs = window.DataService.getSubmissionsForStudent(st.id);
+          if (subs.length < 2 && !subs.some(x => x.preceptorUid === myUid)) {
+            nextStudent = st;
+            break;
+          }
+        }
+      }
+
+      if (nextStudent) {
+        this.selectStudent(nextStudent.id);
+        this.scrollSelectedStudentIntoView();
+      } else {
+        this.showToast('¡Felicitaciones! No quedan exámenes pendientes para calificar.', 'success');
       }
     }
 
@@ -541,12 +626,46 @@
       const attendBadgeEl = document.getElementById('selectedStudentAttendBadge');
       const assignedNamesEl = document.getElementById('assignedPreceptorsNames');
 
+      const subs = window.DataService.getSubmissionsForStudent(s.id);
+      const currentUser = window.DataService.getCurrentUser();
+      const myUid = currentUser ? currentUser.uid : '';
+
       if (nameEl) nameEl.textContent = `${s.apellido}, ${s.nombre}`;
       if (badgeAulaEl) badgeAulaEl.textContent = `Aula ${s.aula}`;
       if (dniEl) dniEl.textContent = s.dni || 'Sin DNI';
       if (schoolEl) schoolEl.textContent = s.escuela_origen || 'No especificada';
       if (tutorEl) tutorEl.textContent = s.familiar || 'No especificado';
-      if (assignedNamesEl) assignedNamesEl.textContent = `${s.assignedName1} y ${s.assignedName2}`;
+
+      if (assignedNamesEl) {
+        if (subs.length === 0) {
+          assignedNamesEl.innerHTML = `<span style="color: #94a3b8;">⏳ Sin evaluar (0 de 2 cargas)</span>`;
+        } else if (subs.length === 1) {
+          assignedNamesEl.innerHTML = `<span style="color: #fbbf24;">⚡ 1 de 2 cargas (${subs[0].preceptorName}) &bull; Requiere 2da carga</span>`;
+        } else {
+          assignedNamesEl.innerHTML = `<span style="color: #34d399;">✅ 2 de 2 cargas (${subs[0].preceptorName} y ${subs[1].preceptorName})</span>`;
+        }
+      }
+
+      // Aviso si 2 colegas ya calificaron este examen y el usuario actual no participó
+      const bannerCompleted = document.getElementById('examAlreadyCompletedBanner');
+      if (bannerCompleted) {
+        const isLoadedByMe = subs.some(x => x.preceptorUid === myUid);
+        if (subs.length >= 2 && !isLoadedByMe) {
+          bannerCompleted.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center w-100 flex-wrap gap-2">
+              <div>
+                <strong>⚠️ Examen ya calificado por 2 colegas:</strong> Este alumno ya fue evaluado por <strong>${subs[0].preceptorName}</strong> y <strong>${subs[1].preceptorName}</strong>. No requiere más cargas.
+              </div>
+              <button type="button" class="btn btn-warning btn-sm" onclick="window.app.navigateNextPending()">
+                ⏩ Siguiente Examen Pendiente
+              </button>
+            </div>
+          `;
+          bannerCompleted.style.display = 'block';
+        } else {
+          bannerCompleted.style.display = 'none';
+        }
+      }
 
       if (phoneLinkEl) {
         phoneLinkEl.href = s.telefono ? `tel:${s.telefono}` : '#';
@@ -588,9 +707,22 @@
 
         let myBadge = '';
         if (mySub) {
-          myBadge = `<span class="badge badge-success-subtle">Mi Carga: ${mySub.scoreTotal}</span>`;
+          myBadge = `<span class="badge badge-success-subtle">✍️ Calificado (${mySub.scoreTotal.toFixed(1)})</span>`;
+        } else if (subs.length === 1) {
+          myBadge = `<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24;">⚡ Falta 2da (${subs[0].preceptorName})</span>`;
+        } else if (subs.length >= 2) {
+          myBadge = `<span class="badge badge-matched">✅ Completo (2/2)</span>`;
         } else {
-          myBadge = `<span class="badge badge-pending-subtle">Pendiente</span>`;
+          myBadge = `<span class="badge badge-pending-subtle">⏳ Sin evaluar (0/2)</span>`;
+        }
+
+        let loadsInfo = '';
+        if (subs.length === 0) {
+          loadsInfo = '<span class="text-muted small">Sin cargas registradas</span>';
+        } else if (subs.length === 1) {
+          loadsInfo = `<span class="small" style="color: #fbbf24;">1/2 por ${subs[0].preceptorName}</span>`;
+        } else {
+          loadsInfo = `<span class="small" style="color: #34d399;">2/2: ${subs[0].preceptorName} y ${subs[1].preceptorName}</span>`;
         }
 
         html += `
@@ -604,7 +736,7 @@
               ${myBadge}
             </div>
             <div class="preceptor-pair-label">
-              Asignados: ${st.assignedName1} y ${st.assignedName2} (${subs.length}/2 cargas)
+              ${loadsInfo}
             </div>
           </div>
         `;
@@ -798,6 +930,7 @@
 
       const q = (document.getElementById('dirSearchInput') && document.getElementById('dirSearchInput').value.trim().toLowerCase()) || '';
       const aula = (document.getElementById('dirAulaFilter') && document.getElementById('dirAulaFilter').value) || 'all';
+      const status = (document.getElementById('dirStatusFilter') && document.getElementById('dirStatusFilter').value) || 'all';
       const attend = (document.getElementById('dirAttendFilter') && document.getElementById('dirAttendFilter').value) || 'all';
       const school = (document.getElementById('dirSchoolFilter') && document.getElementById('dirSchoolFilter').value) || 'all';
 
@@ -809,6 +942,14 @@
         students = students.filter(s => s.asistio === isPres);
       }
       if (school !== 'all') students = students.filter(s => s.escuela_origen === school);
+
+      if (status === 'need_second') {
+        students = students.filter(s => window.DataService.getSubmissionsForStudent(s.id).length === 1);
+      } else if (status === 'zero_loads') {
+        students = students.filter(s => window.DataService.getSubmissionsForStudent(s.id).length === 0);
+      } else if (status === 'completed') {
+        students = students.filter(s => window.DataService.getSubmissionsForStudent(s.id).length >= 2);
+      }
 
       if (q) {
         students = students.filter(s => {
@@ -830,9 +971,19 @@
 
       let html = '';
       students.forEach((s, idx) => {
+        const subs = window.DataService.getSubmissionsForStudent(s.id);
         const audit = window.DataService.getStudentAuditStatus(s.id);
         const scoreStr = audit.scoreTotal !== null ? `<strong>${audit.scoreTotal.toFixed(1)}</strong>` : '<span class="text-muted">-</span>';
         const cleanPhone = String(s.telefono || '').replace(/\D/g, '');
+
+        let loadsBadge = '';
+        if (subs.length === 0) {
+          loadsBadge = '<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8;">⏳ 0 de 2</span>';
+        } else if (subs.length === 1) {
+          loadsBadge = `<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24;">⚡ 1/2 (${subs[0].preceptorName})</span>`;
+        } else {
+          loadsBadge = `<span class="badge badge-matched">✅ 2/2 (${subs.map(x => x.preceptorName).join(' + ')})</span>`;
+        }
 
         html += `
           <tr>
@@ -840,7 +991,7 @@
             <td><strong>${s.apellido}, ${s.nombre}</strong></td>
             <td>${s.dni}</td>
             <td class="text-center"><span class="badge badge-aula">A${s.aula}</span></td>
-            <td><small>${s.assignedName1} y ${s.assignedName2}</small></td>
+            <td class="text-center">${loadsBadge}</td>
             <td class="text-center">
               <span class="status-pill ${s.asistio ? 'pill-success' : 'pill-danger'}">
                 ${s.asistio ? 'Presente' : 'Ausente'}
@@ -857,8 +1008,8 @@
                   📞
                 </a>
               ` : ''}
-              <button class="btn btn-sm btn-light-pill" onclick="window.app.switchTab('carga'); window.app.selectStudent('${s.id}');">
-                Cargar
+              <button type="button" class="btn btn-sm btn-primary" onclick="window.app.jumpToGradeStudent('${s.id}')">
+                🚀 Cargar
               </button>
             </td>
           </tr>
@@ -1160,7 +1311,7 @@
             <td>${item.partnerName}</td>
             <td class="text-center">${partnerScoreBadge}<br>${dualBadge}</td>
             <td class="text-end">
-              <button type="button" class="btn ${item.isLoadedByMe ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="window.app.jumpToGradeStudent(${s.id})">
+              <button type="button" class="btn ${item.isLoadedByMe ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="window.app.jumpToGradeStudent('${s.id}')">
                 ${item.isLoadedByMe ? '✏️ Ver / Editar' : '🚀 Cargar Ahora'}
               </button>
             </td>
@@ -1443,11 +1594,11 @@
             <td class="text-center">${matchBadge}</td>
             <td class="text-end">
               ${canAudit ? `
-                <button type="button" class="btn btn-warning btn-sm" onclick="window.AuditManager.openDiscrepancyModal(${st.id})">
+                <button type="button" class="btn btn-warning btn-sm" onclick="window.AuditManager.openDiscrepancyModal('${st.id}')">
                   ⚖️ Resolver
                 </button>
               ` : `
-                <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.jumpToGradeStudent(${st.id})">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.jumpToGradeStudent('${st.id}')">
                   ✏️ Ver
                 </button>
               `}
