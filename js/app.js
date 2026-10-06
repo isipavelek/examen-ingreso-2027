@@ -573,7 +573,11 @@
         });
 
         if (submission.localOnly) {
-          this.showToast(`💾 Guardado localmente en tu equipo (Nota: ${submission.scoreTotal}). Sin conexión a Firebase.`, 'warning');
+          if (submission.quotaExceeded) {
+            this.showToast(`💾 Guardado localmente (Cuota diaria de Firebase agotada). La nota ${submission.scoreTotal} quedó segura en tu equipo.`, 'warning');
+          } else {
+            this.showToast(`💾 Guardado localmente en tu equipo (Nota: ${submission.scoreTotal}). Sin conexión a Firebase.`, 'warning');
+          }
         } else if (otherSub) {
           const isMatch = Math.abs(submission.scoreTotal - otherSub.scoreTotal) < 0.01;
           if (isMatch) {
@@ -1665,6 +1669,10 @@
         badge.textContent = '🟢 Online (Firestore)';
         badge.className = 'status-pill pill-success';
         badge.title = detail.message;
+      } else if (detail.status === 'quota-exceeded') {
+        badge.textContent = '⚠️ Cuota Firebase Agotada';
+        badge.className = 'status-pill pill-danger';
+        badge.title = 'Cuota diaria gratuita (Spark) de Firebase alcanzada. Actualizar a Plan Blaze en Firebase Console para continuar ilimitado.';
       } else if (detail.status === 'locked') {
         badge.textContent = '🔒 Reglas bloqueadas en Firebase';
         badge.className = 'status-pill pill-danger';
@@ -1689,15 +1697,23 @@
 
       try {
         const res = await window.FirebaseSyncService.syncAllLocalToCloud();
-        if (res.synced > 0) {
+        if (res.quotaExceeded) {
+          this.showToast(`⚠️ Cuota diaria de Firebase agotada (Spark Plan). Los datos quedan seguros en tu PC. Para sincronizar ya mismo se debe activar el Plan Blaze en Firebase Console.`, 'danger');
+        } else if (res.allUpToDate) {
+          this.showToast(`ℹ️ Todo al día: todos los exámenes ya están sincronizados en Firebase.`, 'info');
+        } else if (res.synced > 0) {
           this.showToast(`✅ ¡Éxito! Se subieron ${res.synced} examen(es) a Firebase Firestore en la nube.`, 'success');
         } else if (res.failed > 0) {
-          this.showToast(`🔒 Permiso denegado en Firebase. Por favor publicá las Reglas en Firebase Console (pestaña Reglas) para habilitar la escritura.`, 'danger');
+          this.showToast(`🔒 Permiso denegado en Firebase o error de conexión.`, 'danger');
         } else {
           this.showToast(`ℹ️ Todo al día: no hay exámenes pendientes de subir en esta computadora.`, 'info');
         }
       } catch (e) {
-        this.showToast(`Error al sincronizar: ${e.message}`, 'danger');
+        if (e.message && (e.message.includes('Quota exceeded') || e.message.includes('resource-exhausted'))) {
+          this.showToast(`⚠️ Cuota diaria de Firebase agotada (Spark Plan). Es necesario habilitar Plan Blaze en Firebase Console.`, 'danger');
+        } else {
+          this.showToast(`Error al sincronizar: ${e.message}`, 'danger');
+        }
       } finally {
         if (btn) {
           btn.disabled = false;

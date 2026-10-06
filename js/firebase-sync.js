@@ -231,6 +231,22 @@
       if (modal) modal.style.display = 'none';
     }
 
+    withTimeout(promise, ms = 7000) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          const timer = setTimeout(() => {
+            const err = new Error(`Tiempo de espera agotado con Firestore (${ms / 1000}s)`);
+            err.code = 'timeout';
+            reject(err);
+          }, ms);
+          if (promise && typeof promise.finally === 'function') {
+            promise.finally(() => clearTimeout(timer));
+          }
+        })
+      ]);
+    }
+
     // --- LISTENERS EN TIEMPO REAL FIRESTORE ---
 
     setupFirestoreListeners() {
@@ -241,6 +257,10 @@
         if (err && (err.code === 'permission-denied' || (err.message && err.message.includes('insufficient permissions')))) {
           this.syncStatus = 'locked';
           this.statusMessage = '🔒 Permiso denegado: Faltan publicar las Reglas en Firebase Console';
+          this.triggerStatusChange();
+        } else if (err && (err.code === 'resource-exhausted' || (err.message && (err.message.includes('Quota exceeded') || err.message.includes('resource-exhausted'))))) {
+          this.syncStatus = 'quota-exceeded';
+          this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan). Es necesario Plan Blaze.';
           this.triggerStatusChange();
         }
       };
@@ -279,10 +299,15 @@
           window.DataService.setAttendanceFromCloud(attendMap);
         }, err => handleFirestoreError(err, 'attendance'));
 
-      // 4. Intentar vaciar cola de exámenes pendientes de sincronización
+      // 4. Intentar vaciar cola de exámenes pendientes únicamente si hay exámenes en cola y no se agotó la cuota
       this.flushPendingQueue();
       if (!this.syncInterval) {
-        this.syncInterval = setInterval(() => this.flushPendingQueue(), 15000);
+        this.syncInterval = setInterval(() => {
+          const queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
+          if (queue && queue.length > 0 && this.syncStatus !== 'quota-exceeded') {
+            this.flushPendingQueue();
+          }
+        }, 60000);
       }
     }
 
@@ -327,32 +352,43 @@
     async flushPendingQueue() {
       if (!this.db) return { count: 0, synced: 0, failed: 0, error: 'Sin conexión a base de datos' };
       try {
-        const localSaved = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
         const pendingQueue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
-        
-        // Unir todo lo local asegurando que ningún examen quede sin subir
-        const toSyncMap = new Map();
-        localSaved.forEach(item => { if (item && item.id) toSyncMap.set(item.id, item); });
-        pendingQueue.forEach(item => { if (item && item.id) toSyncMap.set(item.id, item); });
-
-        if (toSyncMap.size === 0) return { count: 0, synced: 0, failed: 0 };
+        if (!pendingQueue || pendingQueue.length === 0) {
+          return { count: 0, synced: 0, failed: 0 };
+        }
 
         let syncedCount = 0;
         const failed = [];
         let lastError = null;
+        let quotaExceeded = false;
 
-        for (const [id, item] of toSyncMap.entries()) {
+        for (const item of pendingQueue) {
+          if (!item || !item.id) continue;
           try {
-            await this.db.collection('exam_submissions').doc(id).set(item, { merge: true });
+            await this.withTimeout(this.db.collection('exam_submissions').doc(item.id).set(item, { merge: true }), 7000);
             syncedCount++;
           } catch (e) {
             lastError = e;
             failed.push(item);
+            if (e.code === 'resource-exhausted' || (e.message && e.message.includes('Quota exceeded'))) {
+              quotaExceeded = true;
+              this.syncStatus = 'quota-exceeded';
+              this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan)';
+              this.triggerStatusChange();
+              break;
+            }
           }
         }
 
-        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(failed));
-        
+        const processedCount = syncedCount + failed.length;
+        const remaining = pendingQueue.slice(processedCount);
+        const finalQueue = [...failed, ...remaining];
+        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(finalQueue));
+
+        if (quotaExceeded) {
+          return { count: pendingQueue.length, synced: syncedCount, failed: finalQueue.length, quotaExceeded: true, lastError };
+        }
+
         if (failed.length > 0 && lastError && (lastError.code === 'permission-denied' || lastError.message.includes('insufficient permissions'))) {
           this.syncStatus = 'locked';
           this.statusMessage = '🔒 Permiso denegado: Faltan publicar las Reglas en Firebase Console';
@@ -363,7 +399,7 @@
           this.triggerStatusChange();
         }
 
-        return { count: toSyncMap.size, synced: syncedCount, failed: failed.length, lastError };
+        return { count: pendingQueue.length, synced: syncedCount, failed: finalQueue.length, lastError };
       } catch (e) {
         console.error('Error en flushPendingQueue:', e);
         return { error: e.message };
@@ -371,7 +407,73 @@
     }
 
     async syncAllLocalToCloud() {
-      return await this.flushPendingQueue();
+      if (!this.db) {
+        return { count: 0, synced: 0, failed: 0, error: 'Firestore no conectado' };
+      }
+      try {
+        const cloudSubs = (window.DataService && window.DataService.submissions) || [];
+        const cloudSet = new Set(cloudSubs.map(s => `${s.studentId}_${s.preceptorUid}`));
+
+        const localSaved = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
+        const pendingQueue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
+
+        const toSyncMap = new Map();
+        pendingQueue.forEach(item => {
+          if (item) {
+            const id = item.id || `${item.studentId}_${item.preceptorUid}`;
+            toSyncMap.set(id, { ...item, id });
+          }
+        });
+
+        localSaved.forEach(item => {
+          if (item) {
+            const id = item.id || `${item.studentId}_${item.preceptorUid}`;
+            if (!cloudSet.has(id)) {
+              toSyncMap.set(id, { ...item, id });
+            }
+          }
+        });
+
+        if (toSyncMap.size === 0) {
+          localStorage.setItem('pending_cloud_sync_queue', '[]');
+          return { count: 0, synced: 0, failed: 0, allUpToDate: true };
+        }
+
+        let syncedCount = 0;
+        const stillPending = [];
+        let lastError = null;
+        let quotaExceeded = false;
+
+        for (const [id, item] of toSyncMap.entries()) {
+          try {
+            await this.withTimeout(this.db.collection('exam_submissions').doc(id).set(item, { merge: true }), 7000);
+            syncedCount++;
+          } catch (e) {
+            lastError = e;
+            stillPending.push(item);
+            if (e.code === 'resource-exhausted' || (e.message && e.message.includes('Quota exceeded'))) {
+              quotaExceeded = true;
+              this.syncStatus = 'quota-exceeded';
+              this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan)';
+              this.triggerStatusChange();
+              break;
+            }
+          }
+        }
+
+        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(stillPending));
+
+        return {
+          count: toSyncMap.size,
+          synced: syncedCount,
+          failed: stillPending.length,
+          lastError,
+          quotaExceeded
+        };
+      } catch (err) {
+        console.error('Error en syncAllLocalToCloud:', err);
+        return { error: err.message };
+      }
     }
 
     async pushSubmission(submission) {
@@ -387,22 +489,26 @@
       }
 
       try {
-        await this.db.collection('exam_submissions').doc(docId).set(submission, { merge: true });
+        await this.withTimeout(this.db.collection('exam_submissions').doc(docId).set(submission, { merge: true }), 7000);
         this.removeFromPendingSyncQueue(docId);
-        // Sincronizar automáticamente en segundo plano cualquier otro examen pendiente
-        setTimeout(() => this.flushPendingQueue(), 100);
         return { docId, localOnly: false, success: true };
       } catch (err) {
         console.error('Error escribiendo en Firestore:', err);
         this.addToPendingSyncQueue(submission);
-        return { docId, localOnly: true, error: err.message };
+        const quotaExceeded = err.code === 'resource-exhausted' || (err.message && err.message.includes('Quota exceeded'));
+        if (quotaExceeded) {
+          this.syncStatus = 'quota-exceeded';
+          this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan)';
+          this.triggerStatusChange();
+        }
+        return { docId, localOnly: true, error: err.message, quotaExceeded };
       }
     }
 
     async pushResolution(studentId, resolutionData) {
       if (!this.db) throw new Error('Base de datos Firestore no conectada.');
       try {
-        await this.db.collection('exam_resolutions').doc(studentId).set(resolutionData, { merge: true });
+        await this.withTimeout(this.db.collection('exam_resolutions').doc(studentId).set(resolutionData, { merge: true }), 7000);
       } catch (err) {
         console.warn('Error guardando resolución:', err);
       }
@@ -411,13 +517,13 @@
     async pushAttendance(studentId, asistio) {
       if (!this.db) return;
       try {
-        await this.db.collection('students_attendance').doc(studentId).set({
+        await this.withTimeout(this.db.collection('students_attendance').doc(studentId).set({
           studentId,
           asistio,
           updatedBy: this.currentProfile ? this.currentProfile.name : 'Usuario',
           updatedByUid: this.currentUser ? this.currentUser.uid : '',
           updatedAt: new Date().toISOString()
-        }, { merge: true });
+        }, { merge: true }), 5000);
       } catch (err) {
         console.warn('Error guardando asistencia en Firestore:', err);
       }
