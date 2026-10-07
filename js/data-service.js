@@ -68,19 +68,26 @@
     // --- MÉTODOS DE SINCRONIZACIÓN FIRESTORE ---
 
     setSubmissionsFromCloud(cloudSubs) {
+      if (!cloudSubs) return;
       const map = new Map();
-      // 1. Cargar locales
-      (this.submissions || []).forEach(s => {
-        if (s && s.studentId && s.preceptorUid) {
-          map.set(`${s.studentId}_${s.preceptorUid}`, s);
-        }
-      });
-      // 2. Unir y sobreescribir con los de la nube
+
+      // 1. La nube (Firestore) es la verdad central oficial
       (cloudSubs || []).forEach(s => {
         if (s && s.studentId && s.preceptorUid) {
           map.set(`${s.studentId}_${s.preceptorUid}`, s);
         }
       });
+
+      // 2. Si hay exámenes pendientes en cola offline local, los conservamos hasta que suban
+      const pendingQueue = (window.FirebaseSyncService && window.FirebaseSyncService.getPendingQueue)
+        ? window.FirebaseSyncService.getPendingQueue()
+        : [];
+      pendingQueue.forEach(s => {
+        if (s && s.studentId && s.preceptorUid && !map.has(`${s.studentId}_${s.preceptorUid}`)) {
+          map.set(`${s.studentId}_${s.preceptorUid}`, s);
+        }
+      });
+
       this.submissions = Array.from(map.values());
       this.notify();
     }
@@ -242,12 +249,15 @@
 
     // --- CARGA DE EXAMEN A FIRESTORE ---
 
-    async saveExamSubmission({ studentId, tema, answers, isAbsent = false, notes = '' }) {
+    async saveExamSubmission({ studentId, tema, answers, isAbsent = false, notes = '', overridePreceptorUid = null, overridePreceptorName = null }) {
       const student = this.getStudentById(studentId);
       if (!student) throw new Error('Estudiante no encontrado');
 
       const userProfile = this.currentUserProfile;
       if (!userProfile) throw new Error('No hay usuario autenticado en Firebase');
+
+      const targetUid = overridePreceptorUid || userProfile.uid;
+      const targetName = overridePreceptorName || userProfile.name;
 
       if (!isAbsent && (!tema || (tema !== 'A' && tema !== 'B'))) {
         throw new Error('Debés seleccionar Tema A o Tema B para guardar la calificación.');
@@ -269,8 +279,8 @@
         studentDni: student.dni,
         studentName: `${student.apellido}, ${student.nombre}`,
         aula: student.aula,
-        preceptorUid: userProfile.uid,
-        preceptorName: userProfile.name,
+        preceptorUid: targetUid,
+        preceptorName: targetName,
         timestamp: new Date().toISOString(),
         tema,
         answers: isAbsent ? {} : answers,
@@ -279,11 +289,11 @@
         scoreTotal: scoreData.scoreTotal,
         correctCount: scoreData.correctCount,
         isAbsent,
-        notes
+        notes: notes || (overridePreceptorUid && overridePreceptorUid !== userProfile.uid ? `Modificado/Corregido por Dirección (${userProfile.name})` : '')
       };
 
       // 1. Guardar de inmediato en memoria local de la app para actualización instantánea
-      const existingIdx = this.submissions.findIndex(s => s.studentId === studentId && s.preceptorUid === userProfile.uid);
+      const existingIdx = this.submissions.findIndex(s => s.studentId === studentId && s.preceptorUid === targetUid);
       if (existingIdx >= 0) {
         this.submissions[existingIdx] = submissionRecord;
       } else {
@@ -325,6 +335,23 @@
 
       await window.FirebaseSyncService.pushResolution(studentId, resRecord);
       return resRecord;
+    }
+
+    async deleteSubmission(studentId, preceptorUid) {
+      const res = await window.FirebaseSyncService.deleteSubmission(studentId, preceptorUid);
+      this.submissions = this.submissions.filter(s => !(s.studentId === studentId && s.preceptorUid === preceptorUid));
+      this.notify();
+      return res;
+    }
+
+    async resetStudentExam(studentId) {
+      const res = await window.FirebaseSyncService.resetStudentExam(studentId);
+      this.submissions = this.submissions.filter(s => s.studentId !== studentId);
+      if (this.resolutions && this.resolutions[studentId]) {
+        delete this.resolutions[studentId];
+      }
+      this.notify();
+      return res;
     }
 
     // --- MOTOR DE AUDITORÍA Y DOBLE CARGA CRUZADA ---

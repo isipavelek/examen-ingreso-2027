@@ -314,7 +314,21 @@
           window.DataService.setAttendanceFromCloud(attendMap);
         }, err => handleFirestoreError(err, 'attendance'));
 
-      // 4. Intentar sincronizar en segundo plano periódicamente si hay exámenes locales pendientes
+      // 4. Escuchar anulaciones y eliminaciones de exámenes para propagar entre PCs
+      try {
+        this.unsubscribeDeleted = this.db.collection('deleted_submissions')
+          .onSnapshot(snapshot => {
+            snapshot.forEach(doc => {
+              this.purgeDeletedLocally(doc.id);
+            });
+          }, err => {
+            console.warn('Colección deleted_submissions:', err.message);
+          });
+      } catch (delErr) {
+        console.warn('No se pudo inicializar listener de deleted_submissions:', delErr);
+      }
+
+      // 5. Intentar sincronizar en segundo plano periódicamente si hay exámenes locales pendientes
       this.autoSyncMissingLocalExams();
       if (!this.syncInterval) {
         this.syncInterval = setInterval(() => {
@@ -337,8 +351,45 @@
           localList.push(submission);
         }
         localStorage.setItem('saved_exam_submissions', JSON.stringify(localList));
+
+        // Si fue guardado nuevamente, remover de la lista negra de anulados
+        let deletedList = JSON.parse(localStorage.getItem('deleted_exam_submissions') || '[]');
+        const docId = submission.id || `${submission.studentId}_${submission.preceptorUid}`;
+        if (deletedList.includes(docId)) {
+          deletedList = deletedList.filter(id => id !== docId);
+          localStorage.setItem('deleted_exam_submissions', JSON.stringify(deletedList));
+        }
       } catch (e) {
         console.warn('No se pudo guardar en localStorage:', e);
+      }
+    }
+
+    purgeDeletedLocally(docId) {
+      try {
+        let deletedList = JSON.parse(localStorage.getItem('deleted_exam_submissions') || '[]');
+        if (!deletedList.includes(docId)) {
+          deletedList.push(docId);
+          localStorage.setItem('deleted_exam_submissions', JSON.stringify(deletedList));
+        }
+
+        let localList = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
+        const updatedLocal = localList.filter(s => {
+          const id = s.id || `${s.studentId}_${s.preceptorUid}`;
+          return id !== docId;
+        });
+        localStorage.setItem('saved_exam_submissions', JSON.stringify(updatedLocal));
+
+        let queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
+        const updatedQueue = queue.filter(s => {
+          const id = s.id || `${s.studentId}_${s.preceptorUid}`;
+          return id !== docId;
+        });
+        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(updatedQueue));
+
+        if (this.cloudDocIds) this.cloudDocIds.delete(docId);
+        if (this.cloudDocMap) this.cloudDocMap.delete(docId);
+      } catch (e) {
+        console.warn('Error en purgeDeletedLocally:', e);
       }
     }
 
@@ -447,9 +498,11 @@
         const toSyncMap = new Map();
 
         // A. Agregar elementos pendientes en cola
+        const deletedDocIds = JSON.parse(localStorage.getItem('deleted_exam_submissions') || '[]');
         pendingQueue.forEach(item => {
           if (item) {
             const id = item.id || `${item.studentId}_${item.preceptorUid}`;
+            if (deletedDocIds.includes(id)) return; // Nunca resucitar examen anulado
             toSyncMap.set(id, { ...item, id });
           }
         });
@@ -458,6 +511,7 @@
         localSaved.forEach(item => {
           if (item) {
             const id = item.id || `${item.studentId}_${item.preceptorUid}`;
+            if (deletedDocIds.includes(id)) return; // Nunca resucitar examen anulado
             const existsInCloud = cloudDocIds.has(id);
             if (!existsInCloud) {
               toSyncMap.set(id, { ...item, id });
@@ -594,6 +648,53 @@
         }
         return { docId, localOnly: true, error: err.message, quotaExceeded };
       }
+    }
+
+    async deleteSubmission(studentId, preceptorUid) {
+      const docId = `${studentId}_${preceptorUid}`;
+      this.purgeDeletedLocally(docId);
+
+      if (!this.db) {
+        return { success: true, localOnly: true };
+      }
+
+      try {
+        await this.withTimeout(this.db.collection('exam_submissions').doc(docId).delete(), 7000);
+
+        try {
+          await this.withTimeout(this.db.collection('deleted_submissions').doc(docId).set({
+            docId,
+            studentId,
+            preceptorUid,
+            deletedAt: new Date().toISOString(),
+            deletedBy: this.currentProfile ? this.currentProfile.name : 'Dirección'
+          }), 4000);
+        } catch (delErr) {
+          console.warn('Colección deleted_submissions no disponible:', delErr.message);
+        }
+
+        return { success: true };
+      } catch (err) {
+        console.error('Error eliminando examen en Firestore:', err);
+        return { success: false, error: err.message };
+      }
+    }
+
+    async resetStudentExam(studentId) {
+      const subs = window.DataService.getSubmissionsForStudent(studentId);
+      for (const s of subs) {
+        await this.deleteSubmission(studentId, s.preceptorUid);
+      }
+
+      if (this.db) {
+        try {
+          await this.withTimeout(this.db.collection('exam_resolutions').doc(studentId).delete(), 7000);
+        } catch (e) {
+          console.warn('Error borrando resolución:', e);
+        }
+      }
+
+      return { success: true };
     }
 
     exportLocalBackup() {

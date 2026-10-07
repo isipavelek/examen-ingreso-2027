@@ -172,12 +172,47 @@
         }
       }
 
-      // 2. Tarjetas comparativas enfrentadas
+      // 2. Tarjetas comparativas / informativas de preceptores
       if (compareCardsEl) {
-        if (subs.length < 2) {
+        if (subs.length === 0) {
           compareCardsEl.innerHTML = `
             <div class="p-3 text-muted text-center w-100" style="grid-column: 1 / -1; background: rgba(15, 23, 42, 0.5); border-radius: var(--radius-md);">
-              Este alumno tiene ${subs.length} carga(s) registrada(s). Se requieren 2 cargas de distintos preceptores para auditar discrepancias.
+              Este alumno aún no tiene ninguna evaluación registrada en el sistema.
+            </div>
+          `;
+        } else if (subs.length === 1) {
+          const p1 = subs[0];
+          const initial1 = p1.preceptorName ? p1.preceptorName.charAt(0) : '1';
+          const answeredCount = Object.keys(p1.answers || {}).length;
+
+          compareCardsEl.innerHTML = `
+            <div class="audit-preceptor-card" style="grid-column: 1 / -1; border-color: rgba(245, 158, 11, 0.4);">
+              <div class="audit-preceptor-header">
+                <div class="audit-preceptor-avatar" style="background: #f59e0b;">${initial1}</div>
+                <div class="flex-grow-1">
+                  <div style="font-weight: 700; color: #fff; font-size: 1rem;">
+                    ${p1.preceptorName} <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; font-size: 0.75rem;">Carga Simple (1 de 2)</span>
+                  </div>
+                  <small class="text-muted">
+                    Tema cargado: <strong style="color: #60a5fa;">Tema ${p1.tema}</strong> &bull; 
+                    Respuestas completadas: <strong>${answeredCount} de 20</strong> &bull;
+                    ${answeredCount === 0 ? '<span style="color: #f87171; font-weight: 700;">⚠️ Examen guardado sin respuestas (0.0/10)</span>' : ''}
+                  </small>
+                </div>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-sm btn-secondary" onclick="window.AuditManager.editSubmissionInCarga('${studentId}', '${p1.preceptorUid}')" title="Abrir esta evaluación en Carga Ágil para corregir respuestas o Tema">
+                    ✏️ Modificar en Carga Ágil
+                  </button>
+                  <button type="button" class="btn btn-sm btn-danger" onclick="window.AuditManager.confirmDeleteSubmission('${studentId}', '${p1.preceptorUid}', '${p1.preceptorName}')" title="Anular y eliminar permanentemente esta carga errónea">
+                    🗑️ Anular / Eliminar Carga
+                  </button>
+                </div>
+              </div>
+              <div class="audit-preceptor-scores mt-2">
+                <span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.85rem;">Matemática: ${p1.scoreMath !== null ? p1.scoreMath.toFixed(1) : '-'} / 5</span>
+                <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 0.85rem;">Lengua: ${p1.scoreLang !== null ? p1.scoreLang.toFixed(1) : '-'} / 5</span>
+                <span class="badge" style="background: rgba(139, 92, 246, 0.2); color: #c084fc; font-weight: 700; font-size: 0.85rem;">Nota Total: ${p1.scoreTotal !== null ? p1.scoreTotal.toFixed(1) : '-'} / 10</span>
+              </div>
             </div>
           `;
         } else {
@@ -190,7 +225,7 @@
             <div class="audit-preceptor-card">
               <div class="audit-preceptor-header">
                 <div class="audit-preceptor-avatar" style="background: #10b981;">${initial1}</div>
-                <div>
+                <div class="flex-grow-1">
                   <div style="font-weight: 700; color: #fff; font-size: 0.95rem;">${p1.preceptorName} (Carga 1)</div>
                   <small class="text-muted">Tema cargado: <strong style="color: #60a5fa;">Tema ${p1.tema}</strong></small>
                 </div>
@@ -198,17 +233,25 @@
               <div class="audit-preceptor-scores">
                 <span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">Matemática: ${p1.scoreMath !== null ? p1.scoreMath.toFixed(1) : '-'} / 5</span>
                 <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">Lengua: ${p1.scoreLang !== null ? p1.scoreLang.toFixed(1) : '-'} / 5</span>
-                <span class="badge" style="background: rgba(139, 92, 246, 0.2); color: #c084fc; font-weight: 700;">Nota Total: ${p1.scoreTotal !== null ? p1.scoreTotal.toFixed(1) : '-'} / 10</span>
+                <span class="badge" style="background: rgba(139, 92, 246, 0.2); color: #c084fc; font-weight: 700;">Nota: ${p1.scoreTotal !== null ? p1.scoreTotal.toFixed(1) : '-'} / 10</span>
               </div>
-              <button type="button" class="btn btn-secondary btn-sm mt-1" onclick="window.AuditManager.resolveFast('${studentId}', 0)" title="Acepta todas las respuestas cargadas por ${p1.preceptorName}">
-                ✅ Aceptar Todo de ${p1.preceptorName}
-              </button>
+              <div class="d-flex gap-2 mt-2">
+                <button type="button" class="btn btn-secondary btn-sm flex-grow-1" onclick="window.AuditManager.resolveFast('${studentId}', 0)" title="Acepta todas las respuestas cargadas por ${p1.preceptorName}">
+                  ✅ Aceptar Todo
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="window.AuditManager.editSubmissionInCarga('${studentId}', '${p1.preceptorUid}')" title="Modificar en Carga Ágil">
+                  ✏️ Editar
+                </button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="window.AuditManager.confirmDeleteSubmission('${studentId}', '${p1.preceptorUid}', '${p1.preceptorName}')" title="Anular carga de ${p1.preceptorName}">
+                  🗑️ Anular
+                </button>
+              </div>
             </div>
 
             <div class="audit-preceptor-card">
               <div class="audit-preceptor-header">
                 <div class="audit-preceptor-avatar" style="background: #06b6d4;">${initial2}</div>
-                <div>
+                <div class="flex-grow-1">
                   <div style="font-weight: 700; color: #fff; font-size: 0.95rem;">${p2.preceptorName} (Carga 2)</div>
                   <small class="text-muted">Tema cargado: <strong style="color: #60a5fa;">Tema ${p2.tema}</strong></small>
                 </div>
@@ -216,11 +259,19 @@
               <div class="audit-preceptor-scores">
                 <span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">Matemática: ${p2.scoreMath !== null ? p2.scoreMath.toFixed(1) : '-'} / 5</span>
                 <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">Lengua: ${p2.scoreLang !== null ? p2.scoreLang.toFixed(1) : '-'} / 5</span>
-                <span class="badge" style="background: rgba(139, 92, 246, 0.2); color: #c084fc; font-weight: 700;">Nota Total: ${p2.scoreTotal !== null ? p2.scoreTotal.toFixed(1) : '-'} / 10</span>
+                <span class="badge" style="background: rgba(139, 92, 246, 0.2); color: #c084fc; font-weight: 700;">Nota: ${p2.scoreTotal !== null ? p2.scoreTotal.toFixed(1) : '-'} / 10</span>
               </div>
-              <button type="button" class="btn btn-secondary btn-sm mt-1" onclick="window.AuditManager.resolveFast('${studentId}', 1)" title="Acepta todas las respuestas cargadas por ${p2.preceptorName}">
-                ✅ Aceptar Todo de ${p2.preceptorName}
-              </button>
+              <div class="d-flex gap-2 mt-2">
+                <button type="button" class="btn btn-secondary btn-sm flex-grow-1" onclick="window.AuditManager.resolveFast('${studentId}', 1)" title="Acepta todas las respuestas cargadas por ${p2.preceptorName}">
+                  ✅ Aceptar Todo
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="window.AuditManager.editSubmissionInCarga('${studentId}', '${p2.preceptorUid}')" title="Modificar en Carga Ágil">
+                  ✏️ Editar
+                </button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="window.AuditManager.confirmDeleteSubmission('${studentId}', '${p2.preceptorUid}', '${p2.preceptorName}')" title="Anular carga de ${p2.preceptorName}">
+                  🗑️ Anular
+                </button>
+              </div>
             </div>
           `;
         }
@@ -232,22 +283,55 @@
       // 4. Botones del footer
       const resolutionContainer = document.getElementById('auditResolutionControls');
       if (resolutionContainer) {
-        const name1 = subs[0] ? subs[0].preceptorName : 'Carga 1';
-        const name2 = subs[1] ? subs[1].preceptorName : 'Carga 2';
-        resolutionContainer.innerHTML = `
-          <button type="button" class="btn btn-secondary me-2" onclick="window.AuditManager.closeModal()">
-            Cancelar
-          </button>
-          <button type="button" class="btn btn-secondary me-2" onclick="window.AuditManager.resolveFast('${studentId}', 0)">
-            Aceptar todo de ${name1}
-          </button>
-          <button type="button" class="btn btn-secondary me-2" onclick="window.AuditManager.resolveFast('${studentId}', 1)">
-            Aceptar todo de ${name2}
-          </button>
-          <button type="button" class="btn btn-primary" onclick="window.AuditManager.saveManualResolution('${studentId}')">
-            ⚖️ Confirmar Selección y Guardar Nota Oficial
-          </button>
-        `;
+        if (subs.length < 2) {
+          const sub = subs[0];
+          resolutionContainer.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center w-100 flex-wrap gap-2">
+              ${sub ? `
+                <button type="button" class="btn btn-danger" onclick="window.AuditManager.confirmDeleteSubmission('${studentId}', '${sub.preceptorUid}', '${sub.preceptorName}')">
+                  🗑️ Anular / Eliminar Carga de ${sub.preceptorName}
+                </button>
+              ` : `<span></span>`}
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-secondary" onclick="window.AuditManager.closeModal()">
+                  Cerrar
+                </button>
+                ${sub ? `
+                  <button type="button" class="btn btn-secondary" onclick="window.AuditManager.editSubmissionInCarga('${studentId}', '${sub.preceptorUid}')">
+                    ✏️ Modificar en Carga Ágil
+                  </button>
+                  <button type="button" class="btn btn-primary" onclick="window.AuditManager.saveManualResolution('${studentId}')">
+                    ⚖️ Convalidar como Nota Oficial
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        } else {
+          const name1 = subs[0] ? subs[0].preceptorName : 'Carga 1';
+          const name2 = subs[1] ? subs[1].preceptorName : 'Carga 2';
+          resolutionContainer.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center w-100 flex-wrap gap-2">
+              <button type="button" class="btn btn-danger" onclick="window.AuditManager.confirmResetStudentExam('${studentId}')" title="Anular y borrar todas las evaluaciones de este alumno">
+                🗑️ Anular Todo el Examen del Alumno
+              </button>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-secondary" onclick="window.AuditManager.closeModal()">
+                  Cancelar
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="window.AuditManager.resolveFast('${studentId}', 0)">
+                  Aceptar todo de ${name1}
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="window.AuditManager.resolveFast('${studentId}', 1)">
+                  Aceptar todo de ${name2}
+                </button>
+                <button type="button" class="btn btn-primary" onclick="window.AuditManager.saveManualResolution('${studentId}')">
+                  ⚖️ Confirmar Selección y Guardar Nota Oficial
+                </button>
+              </div>
+            </div>
+          `;
+        }
       }
 
       modal.classList.add('active');
@@ -261,24 +345,86 @@
       if (!tableBody) return;
 
       const subs = audit.submissions;
-      if (subs.length < 2) {
-        tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">Faltan cargas para comparar.</td></tr>`;
+      const questions = window.EXAM_CONFIG.questions;
+      const th1 = document.getElementById('thPreceptor1');
+      const th2 = document.getElementById('thPreceptor2');
+      const diffBadge = document.getElementById('diffCountBadge');
+      const subtitle = document.getElementById('auditDiffSubtitle');
+
+      if (subs.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">Este estudiante aún no tiene ninguna evaluación cargada.</td></tr>`;
         return;
       }
 
+      // CASO: Carga Simple (1 sola evaluación registrada)
+      if (subs.length === 1) {
+        const p1 = subs[0];
+        if (th1) th1.textContent = `${p1.preceptorName} (Tema ${p1.tema})`;
+        if (th2) th2.textContent = 'Segunda Carga (Pendiente)';
+        if (diffBadge) diffBadge.textContent = '1/2';
+        if (subtitle) {
+          subtitle.textContent = `Visualizando las 20 preguntas cargadas por ${p1.preceptorName} (Nota: ${p1.scoreTotal !== null ? p1.scoreTotal.toFixed(1) : '-'} / 10)`;
+        }
+
+        let html = '';
+        questions.forEach(q => {
+          const ans1 = (p1.answers && p1.answers[q.n]) ? String(p1.answers[q.n]).toUpperCase() : '-';
+          const currentOfficialKey = this.officialTema === 'B' ? q.temaB : q.temaA;
+          const isCorrect = ans1 === currentOfficialKey;
+
+          const optionsList = ['A', 'B', 'C', 'D'];
+          let optionsHtml = '';
+          optionsList.forEach(opt => {
+            let label = `Opción ${opt}`;
+            if (opt === ans1) label += ` (${p1.preceptorName})`;
+            if (opt === currentOfficialKey) label += ` ★ Clave`;
+            optionsHtml += `<option value="${opt}" ${opt === ans1 ? 'selected' : ''}>${label}</option>`;
+          });
+
+          html += `
+            <tr class="${isCorrect ? 'row-matched' : 'row-discrepancy'}">
+              <td class="text-center font-bold" style="font-size: 0.95rem;">P${q.n}</td>
+              <td>
+                <div style="font-weight: 600; color: var(--text-main); font-size: 0.85rem;">${q.subject} &bull; ${q.topic}</div>
+                <small class="text-muted d-block" style="font-size: 0.75rem;">${q.criterion}</small>
+              </td>
+              <td class="text-center">
+                <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-weight: 700; font-size: 0.85rem;">
+                  Tema ${this.officialTema}: ${currentOfficialKey}
+                </span>
+              </td>
+              <td class="text-center" style="font-size: 1rem;">
+                <span class="status-pill ${isCorrect ? 'pill-success' : (ans1 === '-' ? 'pill-warning' : 'pill-danger')}">
+                  ${ans1}
+                </span>
+              </td>
+              <td class="text-center text-muted">
+                <small style="color: var(--text-muted);">⏳ Pendiente</small>
+              </td>
+              <td class="text-center">
+                ${isCorrect ? '<span class="status-pill pill-success">✅ Correcto</span>' : (ans1 === '-' ? '<span class="status-pill pill-warning">⚠️ En blanco</span>' : '<span class="status-pill pill-danger">❌ Incorrecto</span>')}
+              </td>
+              <td class="text-center">
+                <select class="form-select form-select-sm resolve-select" data-q="${q.n}" style="min-width: 170px; font-weight: 600;">
+                  ${optionsHtml}
+                </select>
+              </td>
+            </tr>
+          `;
+        });
+
+        tableBody.innerHTML = html;
+        return;
+      }
+
+      // CASO: 2 o más cargas (Auditoría cruzada de discrepancias)
       const p1 = subs[0];
       const p2 = subs[1];
-      const questions = window.EXAM_CONFIG.questions;
 
-      const th1 = document.getElementById('thPreceptor1');
-      const th2 = document.getElementById('thPreceptor2');
       if (th1) th1.textContent = `${p1.preceptorName} (Tema ${p1.tema})`;
       if (th2) th2.textContent = `${p2.preceptorName} (Tema ${p2.tema})`;
-
-      const diffBadge = document.getElementById('diffCountBadge');
       if (diffBadge) diffBadge.textContent = audit.discrepancyCount;
 
-      const subtitle = document.getElementById('auditDiffSubtitle');
       if (subtitle) {
         subtitle.textContent = this.showOnlyDiffs
           ? `Mostrando las ${audit.discrepancyCount} pregunta(s) con discrepancia de 20 preguntas totales`
@@ -410,6 +556,61 @@
       this.closeModal();
       window.app.renderAll();
       window.app.showToast('✅ Nota oficial confirmada y guardada con éxito en Firebase Firestore', 'success');
+    }
+
+    async confirmDeleteSubmission(studentId, preceptorUid, preceptorName) {
+      const student = window.DataService.getStudentById(studentId);
+      const studentName = student ? `${student.apellido}, ${student.nombre}` : 'el estudiante';
+      const confirmed = confirm(`⚠️ ATENCIÓN:\n\n¿Estás seguro de anular y eliminar la evaluación cargada por ${preceptorName} para ${studentName}?\n\n• Se borrará permanentemente de Firebase Firestore.\n• El examen quedará libre para ser evaluado nuevamente por los preceptores asignados.`);
+      if (!confirmed) return;
+
+      try {
+        await window.DataService.deleteSubmission(studentId, preceptorUid);
+        this.closeModal();
+        window.app.renderAll();
+        window.app.showToast(`🗑️ Evaluación de ${preceptorName} anulada y eliminada con éxito de Firestore`, 'success');
+      } catch (err) {
+        window.app.showToast(`Error al anular: ${err.message}`, 'danger');
+      }
+    }
+
+    async confirmResetStudentExam(studentId) {
+      const student = window.DataService.getStudentById(studentId);
+      const studentName = student ? `${student.apellido}, ${student.nombre}` : 'el estudiante';
+      const confirmed = confirm(`⚠️ ANULAR TODO EL EXAMEN:\n\n¿Estás seguro de anular y borrar TODAS las evaluaciones y resoluciones de ${studentName}?\n\n• El alumno volverá al estado 'Sin Cargar' (0/2 evaluaciones).\n• Se eliminarán todas las cargas de ambos preceptores.`);
+      if (!confirmed) return;
+
+      try {
+        await window.DataService.resetStudentExam(studentId);
+        this.closeModal();
+        window.app.renderAll();
+        window.app.showToast(`🗑️ Examen de ${studentName} reiniciado a 'Sin Cargar'`, 'success');
+      } catch (err) {
+        window.app.showToast(`Error al reiniciar: ${err.message}`, 'danger');
+      }
+    }
+
+    editSubmissionInCarga(studentId, preceptorUid) {
+      const audit = window.DataService.getStudentAuditStatus(studentId);
+      if (!audit) return;
+      const sub = audit.submissions.find(s => s.preceptorUid === preceptorUid) || audit.submissions[0];
+      if (!sub) return;
+
+      this.closeModal();
+      window.app.switchTab('carga');
+      window.app.selectStudent(studentId);
+
+      // Pre-cargar respuestas y tema de este preceptor
+      window.app.currentTema = sub.tema;
+      window.app.currentAnswers = { ...(sub.answers || {}) };
+      window.app.editingPreceptorUid = preceptorUid;
+      window.app.editingPreceptorName = sub.preceptorName;
+
+      window.app.renderSelectedStudentCard();
+      window.app.renderAnswerSheet();
+      window.app.updateLiveScorecard();
+
+      window.app.showToast(`✏️ Modo de corrección activado para carga de ${sub.preceptorName}. Realizá los cambios y presioná Guardar Examen.`, 'info');
     }
   }
 

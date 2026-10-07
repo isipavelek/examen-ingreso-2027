@@ -412,6 +412,15 @@
       }
     }
 
+    cancelEditingPreceptor() {
+      this.editingPreceptorUid = null;
+      this.editingPreceptorName = null;
+      if (this.selectedStudent) {
+        this.selectStudent(this.selectedStudent.id);
+      }
+      this.showToast('Modo de corrección cancelado', 'info');
+    }
+
     setTema(tema) {
       this.currentTema = tema;
       const btnA = document.getElementById('btnTemaA');
@@ -565,14 +574,26 @@
       const otherSub = prevSubs.find(s => s.preceptorUid !== myUid);
 
       try {
+        const overrideUid = this.editingPreceptorUid || null;
+        const overrideName = this.editingPreceptorName || null;
+        const wasEditing = !!this.editingPreceptorName;
+        const editedName = this.editingPreceptorName;
+
         const submission = await window.DataService.saveExamSubmission({
           studentId: this.selectedStudent.id,
           tema: this.currentTema,
           answers: this.currentAnswers,
-          isAbsent: false
+          isAbsent: false,
+          overridePreceptorUid: overrideUid,
+          overridePreceptorName: overrideName
         });
 
-        if (submission.localOnly) {
+        this.editingPreceptorUid = null;
+        this.editingPreceptorName = null;
+
+        if (wasEditing) {
+          this.showToast(`✅ Evaluación de ${editedName} modificada y guardada con éxito en Firebase (Nota: ${submission.scoreTotal})`, 'success');
+        } else if (submission.localOnly) {
           if (submission.quotaExceeded) {
             this.showToast(`💾 Guardado localmente (Cuota diaria de Firebase agotada). La nota ${submission.scoreTotal} quedó segura en tu equipo.`, 'warning');
           } else {
@@ -690,24 +711,60 @@
         }
       }
 
-      // Aviso si 2 colegas ya calificaron este examen y el usuario actual no participó
+      // Aviso si estamos en modo edición de otro preceptor o si ya completaron
       const bannerCompleted = document.getElementById('examAlreadyCompletedBanner');
       if (bannerCompleted) {
-        const isLoadedByMe = subs.some(x => x.preceptorUid === myUid);
-        if (subs.length >= 2 && !isLoadedByMe) {
+        if (this.editingPreceptorUid) {
           bannerCompleted.innerHTML = `
             <div class="d-flex justify-content-between align-items-center w-100 flex-wrap gap-2">
               <div>
-                <strong>⚠️ Examen ya calificado por 2 colegas:</strong> Este alumno ya fue evaluado por <strong>${subs[0].preceptorName}</strong> y <strong>${subs[1].preceptorName}</strong>. No requiere más cargas.
+                <strong>✏️ MODO DE CORRECCIÓN:</strong> Estás editando la evaluación registrada por <strong>${this.editingPreceptorName}</strong>. Modificá las respuestas o el Tema y presioná <strong>💾 Guardar Examen</strong>.
               </div>
-              <button type="button" class="btn btn-warning btn-sm" onclick="window.app.navigateNextPending()">
-                ⏩ Siguiente Examen Pendiente
-              </button>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.cancelEditingPreceptor()">
+                  ❌ Cancelar Edición
+                </button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="window.AuditManager.confirmDeleteSubmission('${s.id}', '${this.editingPreceptorUid}', '${this.editingPreceptorName}')">
+                  🗑️ Anular Carga
+                </button>
+              </div>
             </div>
           `;
           bannerCompleted.style.display = 'block';
         } else {
-          bannerCompleted.style.display = 'none';
+          const isLoadedByMe = subs.some(x => x.preceptorUid === myUid);
+          if (subs.length >= 2 && !isLoadedByMe) {
+            bannerCompleted.innerHTML = `
+              <div class="d-flex justify-content-between align-items-center w-100 flex-wrap gap-2">
+                <div>
+                  <strong>⚠️ Examen ya calificado por 2 colegas:</strong> Este alumno ya fue evaluado por <strong>${subs[0].preceptorName}</strong> y <strong>${subs[1].preceptorName}</strong>. No requiere más cargas.
+                </div>
+                <button type="button" class="btn btn-warning btn-sm" onclick="window.app.navigateNextPending()">
+                  ⏩ Siguiente Examen Pendiente
+                </button>
+              </div>
+            `;
+            bannerCompleted.style.display = 'block';
+          } else {
+            bannerCompleted.style.display = 'none';
+          }
+        }
+      }
+
+      // Control del botón de anulación en Carga Ágil
+      const btnAnularExam = document.getElementById('btnAnularExam');
+      if (btnAnularExam) {
+        if (subs.length > 0) {
+          btnAnularExam.style.display = 'inline-block';
+          btnAnularExam.onclick = () => {
+            if (subs.length === 1) {
+              window.AuditManager.confirmDeleteSubmission(s.id, subs[0].preceptorUid, subs[0].preceptorName);
+            } else {
+              window.AuditManager.confirmResetStudentExam(s.id);
+            }
+          };
+        } else {
+          btnAnularExam.style.display = 'none';
         }
       }
 
@@ -957,8 +1014,21 @@
         let actionBtn = '';
         if (a.status === 'discrepancia') {
           actionBtn = `<button class="btn btn-sm btn-danger-pill" onclick="window.AuditManager.openDiscrepancyModal('${s.id}')">⚖️ Resolver Discrepancia</button>`;
+        } else if (a.status === 'carga_simple') {
+          const sub = a.submissions[0];
+          actionBtn = `
+            <div class="d-flex gap-1 justify-content-end align-items-center">
+              <button type="button" class="btn btn-sm btn-secondary-pill" onclick="window.AuditManager.openDiscrepancyModal('${s.id}')">Ver / Modificar</button>
+              <button type="button" class="btn btn-sm btn-danger-pill" onclick="window.AuditManager.confirmDeleteSubmission('${s.id}', '${sub.preceptorUid}', '${sub.preceptorName}')" title="Anular y borrar esta carga errónea de ${sub.preceptorName}">🗑️ Anular</button>
+            </div>
+          `;
         } else if (a.submissions.length > 0) {
-          actionBtn = `<button class="btn btn-sm btn-secondary-pill" onclick="window.AuditManager.openDiscrepancyModal('${s.id}')">Ver Detalle</button>`;
+          actionBtn = `
+            <div class="d-flex gap-1 justify-content-end align-items-center">
+              <button type="button" class="btn btn-sm btn-secondary-pill" onclick="window.AuditManager.openDiscrepancyModal('${s.id}')">Ver Detalle</button>
+              <button type="button" class="btn btn-sm btn-danger-pill" onclick="window.AuditManager.confirmResetStudentExam('${s.id}')" title="Anular y reiniciar examen">🗑️ Anular</button>
+            </div>
+          `;
         } else {
           actionBtn = `<button class="btn btn-sm btn-light-pill" onclick="window.app.switchTab('carga'); window.app.selectStudent('${s.id}');">Cargar</button>`;
         }
