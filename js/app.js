@@ -858,6 +858,23 @@
 
     // --- VISTA DE AUDITORÍA (SOLO DIRECTIVOS) ---
 
+    setAuditQuickFilter(filterType) {
+      const select = document.getElementById('auditStatusFilter');
+      if (select) {
+        select.value = filterType;
+      }
+      this.renderAuditView();
+    }
+
+    goToDiscrepancies() {
+      this.switchTab('auditoria');
+      this.setAuditQuickFilter('discrepancy');
+      const table = document.getElementById('view-auditoria');
+      if (table) {
+        table.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+
     renderAuditView() {
       const summary = window.AuditManager.getAuditSummary();
 
@@ -869,12 +886,61 @@
       setEl('auditKpiPending', summary.pendingCount);
       setEl('auditKpiResolved', summary.resolvedCount);
 
+      // Sincronizar contadores de los chips de acceso rápido
+      setEl('chipCountTotal', summary.total);
+      setEl('chipCountDiscrepancy', summary.discrepancyCount);
+      setEl('chipCountMatched', summary.matchedCount + summary.resolvedCount);
+      setEl('chipCountSingle', summary.singleCount);
+      setEl('chipCountPending', summary.pendingCount);
+
+      // Badge de alerta en la pestaña superior de navegación
+      const navBadge = document.getElementById('navAuditoriaBadge');
+      if (navBadge) {
+        navBadge.textContent = summary.discrepancyCount;
+        navBadge.style.display = summary.discrepancyCount > 0 ? 'inline-block' : 'none';
+      }
+
       const tableBody = document.getElementById('auditTableBody');
       if (!tableBody) return;
 
       const searchVal = (document.getElementById('auditSearchInput') && document.getElementById('auditSearchInput').value) || '';
       const aulaVal = (document.getElementById('auditAulaFilter') && document.getElementById('auditAulaFilter').value) || 'all';
       const statusVal = (document.getElementById('auditStatusFilter') && document.getElementById('auditStatusFilter').value) || 'all';
+
+      // Sincronizar estado visual de los chips rápidos
+      const chipIds = {
+        'all': 'chipAuditAll',
+        'discrepancy': 'chipAuditDiscrepancy',
+        'matched': 'chipAuditMatched',
+        'single': 'chipAuditSingle',
+        'pending': 'chipAuditPending'
+      };
+      Object.keys(chipIds).forEach(k => {
+        const chip = document.getElementById(chipIds[k]);
+        if (chip) {
+          if (k === statusVal) {
+            chip.classList.add('active');
+          } else {
+            chip.classList.remove('active');
+          }
+        }
+      });
+
+      // Sincronizar estado visual de los KPIs clickeables
+      const kpiMap = {
+        'all': 'auditKpiTotal',
+        'discrepancy': 'auditKpiDiscrepancies',
+        'matched': 'auditKpiMatched',
+        'single': 'auditKpiSingle',
+        'pending': 'auditKpiPending'
+      };
+      document.querySelectorAll('#view-auditoria .kpi-card-clickable').forEach(c => c.classList.remove('active-kpi-filter'));
+      if (kpiMap[statusVal]) {
+        const kpiEl = document.getElementById(kpiMap[statusVal]);
+        if (kpiEl && kpiEl.closest('.kpi-card-clickable')) {
+          kpiEl.closest('.kpi-card-clickable').classList.add('active-kpi-filter');
+        }
+      }
 
       const items = window.AuditManager.filterStudents(statusVal, searchVal, aulaVal);
 
@@ -890,7 +956,7 @@
 
         let actionBtn = '';
         if (a.status === 'discrepancia') {
-          actionBtn = `<button class="btn btn-sm btn-danger-pill" onclick="window.AuditManager.openDiscrepancyModal('${s.id}')">Resolver Discrepancia</button>`;
+          actionBtn = `<button class="btn btn-sm btn-danger-pill" onclick="window.AuditManager.openDiscrepancyModal('${s.id}')">⚖️ Resolver Discrepancia</button>`;
         } else if (a.submissions.length > 0) {
           actionBtn = `<button class="btn btn-sm btn-secondary-pill" onclick="window.AuditManager.openDiscrepancyModal('${s.id}')">Ver Detalle</button>`;
         } else {
@@ -900,7 +966,7 @@
         const scoreDisplay = (a && typeof a.scoreTotal === 'number' && !isNaN(a.scoreTotal)) ? `<strong>${a.scoreTotal.toFixed(1)}</strong> / 10` : '-';
 
         html += `
-          <tr>
+          <tr class="${a.status === 'discrepancia' ? 'row-discrepancy' : ''}">
             <td class="text-center text-muted">${index + 1}</td>
             <td><strong>${s.apellido}, ${s.nombre}</strong></td>
             <td>${s.dni}</td>
@@ -1419,6 +1485,12 @@
       if (kpiTotalNeeded) kpiTotalNeeded.textContent = totalNeeded;
       if (kpiDiscrepancies) kpiDiscrepancies.textContent = discrepanciesCount;
 
+      const navBadge = document.getElementById('navAuditoriaBadge');
+      if (navBadge) {
+        navBadge.textContent = discrepanciesCount;
+        navBadge.style.display = discrepanciesCount > 0 ? 'inline-block' : 'none';
+      }
+
       const cardsContainer = document.getElementById('preceptorsCardsContainer');
       const selectedPreceptorFilter = document.getElementById('monitorPreceptorSelect') ? document.getElementById('monitorPreceptorSelect').value : 'all';
 
@@ -1648,7 +1720,7 @@
         const canAudit = audit.status === 'discrepancia';
 
         html += `
-          <tr>
+          <tr class="${canAudit ? 'row-discrepancy' : ''}">
             <td class="text-center">${st.nro}</td>
             <td><strong>${st.apellido}, ${st.nombre}</strong></td>
             <td>${st.dni}</td>
@@ -1660,8 +1732,8 @@
             <td class="text-center">${matchBadge}</td>
             <td class="text-end">
               ${canAudit ? `
-                <button type="button" class="btn btn-warning btn-sm" onclick="window.AuditManager.openDiscrepancyModal('${st.id}')">
-                  ⚖️ Resolver
+                <button type="button" class="btn btn-sm btn-danger-pill" onclick="window.AuditManager.openDiscrepancyModal('${st.id}')">
+                  ⚖️ Resolver Discrepancia
                 </button>
               ` : `
                 <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.jumpToGradeStudent('${st.id}')">

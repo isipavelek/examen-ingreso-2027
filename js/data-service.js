@@ -416,9 +416,20 @@
       }
 
       if (hasDiscrepancy) {
+        let badgeDesc = '';
+        if (temaMismatch) {
+          const temasStr = Array.from(new Set(subs.map(s => s.tema))).join(' vs ');
+          badgeDesc = `Tema ${temasStr}`;
+        } else if (discrepantQuestions.length > 0) {
+          const qNums = discrepantQuestions.map(d => `P${d.questionNumber}`).join(', ');
+          badgeDesc = `${discrepantQuestions.length} preg. (${qNums})`;
+        } else {
+          badgeDesc = 'Discrepancia';
+        }
+
         return {
           status: 'discrepancia',
-          badgeText: `⚠️ Discrepancia (${discrepantQuestions.length} preg.)`,
+          badgeText: `⚠️ ${badgeDesc}`,
           badgeClass: 'badge-discrepancy',
           loadsCount: subs.length,
           discrepancyCount: discrepantQuestions.length,

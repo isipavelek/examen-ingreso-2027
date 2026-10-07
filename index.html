@@ -117,6 +117,7 @@
       </button>
       <button class="nav-tab-btn" data-tab="auditoria" id="navBtnAuditoria" style="display: none;">
         <span>🔍</span> Auditoría y Doble Carga
+        <span class="badge-nav-counter" id="navAuditoriaBadge" style="display: none; background: #ef4444; color: #fff; border-radius: 9999px; padding: 2px 7px; font-size: 0.72rem; font-weight: 700; margin-left: 6px;">0</span>
       </button>
       <button class="nav-tab-btn" data-tab="estadisticas" id="navBtnEstadisticas" style="display: none;">
         <span>📊</span> Estadísticas Pedagógicas
@@ -451,11 +452,11 @@
           <span class="kpi-label">Exámenes con Doble Carga (2/2)</span>
         </div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-card-clickable" onclick="window.app.goToDiscrepancies()" title="Clic para ver y resolver las discrepancias en Auditoría">
         <div class="kpi-icon" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">⚠️</div>
         <div class="kpi-data">
           <span class="kpi-value" id="monitorKpiDiscrepancies" style="color: #f87171;">0</span>
-          <span class="kpi-label">Discrepancias para Resolver</span>
+          <span class="kpi-label">Discrepancias para Resolver ➔</span>
         </div>
       </div>
     </div>
@@ -543,50 +544,69 @@
        SECCIÓN 2: AUDITORÍA DE CARGAS Y DOBLE CARGA (RESERVADA DIRECTIVOS)
        ========================================================================== -->
   <main id="view-auditoria" class="view-section">
-    <!-- Tarjetas de Resumen KPI -->
+    <!-- Tarjetas de Resumen KPI (Clickeables para filtrado rápido) -->
     <div class="kpi-cards-grid">
-      <div class="kpi-card">
+      <div class="kpi-card kpi-card-clickable" onclick="window.app.setAuditQuickFilter('all')" title="Ver todos los estudiantes">
         <div class="kpi-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa;">👥</div>
         <div class="kpi-data">
           <span class="kpi-value" id="auditKpiTotal">311</span>
           <span class="kpi-label">Padrón Total</span>
         </div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-card-clickable" onclick="window.app.setAuditQuickFilter('matched')" title="Filtrar cargas coincidentes y resueltas">
         <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">✅</div>
         <div class="kpi-data">
           <span class="kpi-value" id="auditKpiMatched" style="color: #34d399;">0</span>
           <span class="kpi-label">Cargas Coincidentes</span>
         </div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-card-clickable" onclick="window.app.setAuditQuickFilter('discrepancy')" title="Filtrar exámenes con discrepancias para resolver">
         <div class="kpi-icon" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">⚠️</div>
         <div class="kpi-data">
           <span class="kpi-value" id="auditKpiDiscrepancies" style="color: #f87171;">0</span>
           <span class="kpi-label">Discrepancias por Resolver</span>
         </div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-card-clickable" onclick="window.app.setAuditQuickFilter('single')" title="Filtrar exámenes con solo una carga realizada">
         <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">📝</div>
         <div class="kpi-data">
           <span class="kpi-value" id="auditKpiSingle" style="color: #fbbf24;">0</span>
           <span class="kpi-label">Carga Simple (1/2)</span>
         </div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-card-clickable" onclick="window.app.setAuditQuickFilter('matched')" title="Filtrar resoluciones oficiales de Dirección">
         <div class="kpi-icon" style="background: rgba(139, 92, 246, 0.15); color: #c084fc;">⚖️</div>
         <div class="kpi-data">
           <span class="kpi-value" id="auditKpiResolved" style="color: #c084fc;">0</span>
           <span class="kpi-label">Resueltas por Dirección</span>
         </div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-card-clickable" onclick="window.app.setAuditQuickFilter('pending')" title="Filtrar estudiantes sin cargar">
         <div class="kpi-icon" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8;">⏳</div>
         <div class="kpi-data">
           <span class="kpi-value" id="auditKpiPending">311</span>
           <span class="kpi-label">Pendientes</span>
         </div>
       </div>
+    </div>
+
+    <!-- Filtros Rápidos (Chips de Acceso Directo en 1 Clic) -->
+    <div class="audit-quick-chips">
+      <button type="button" class="quick-chip-btn active" id="chipAuditAll" onclick="window.app.setAuditQuickFilter('all')">
+        👥 Todos (<span id="chipCountTotal">311</span>)
+      </button>
+      <button type="button" class="quick-chip-btn chip-danger" id="chipAuditDiscrepancy" onclick="window.app.setAuditQuickFilter('discrepancy')">
+        ⚠️ Con Discrepancias (<span id="chipCountDiscrepancy">0</span>)
+      </button>
+      <button type="button" class="quick-chip-btn chip-success" id="chipAuditMatched" onclick="window.app.setAuditQuickFilter('matched')">
+        ✅ Coincidentes / Resueltas (<span id="chipCountMatched">0</span>)
+      </button>
+      <button type="button" class="quick-chip-btn chip-warning" id="chipAuditSingle" onclick="window.app.setAuditQuickFilter('single')">
+        📝 Carga Simple (1/2) (<span id="chipCountSingle">0</span>)
+      </button>
+      <button type="button" class="quick-chip-btn" id="chipAuditPending" onclick="window.app.setAuditQuickFilter('pending')">
+        ⏳ Sin Cargar (<span id="chipCountPending">0</span>)
+      </button>
     </div>
 
     <!-- Barra de Filtros y Búsqueda -->
@@ -998,15 +1018,31 @@
     <div class="modal-dialog-large">
       <div class="modal-header">
         <div>
-          <h2 id="auditModalStudentName" style="font-size: 1.25rem; font-weight: 700;">Auditoría Comparativa</h2>
+          <div class="d-flex align-items-center gap-2">
+            <h2 id="auditModalStudentName" style="font-size: 1.25rem; font-weight: 700; margin: 0;">Auditoría Comparativa</h2>
+            <span id="auditModalBadge" class="status-pill pill-danger"></span>
+          </div>
           <div id="auditModalStudentInfo" style="font-size: 0.825rem; color: var(--text-muted); margin-top: 0.2rem;"></div>
         </div>
         <button type="button" class="btn-close" onclick="window.AuditManager.closeModal()">&times;</button>
       </div>
 
       <div class="modal-body">
-        <div class="alert mb-3" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 0.75rem 1rem; font-size: 0.85rem; color: #fca5a5;">
-          ⚠️ <strong>Discrepancia detectada entre las dos cargas:</strong> Revisá el examen físico del alumno y seleccioná la opción oficial.
+        <!-- Banner de alerta si hay discrepancia de Tema (A vs B) -->
+        <div id="auditModalTemaAlert"></div>
+
+        <!-- Tarjetas comparativas enfrentadas (Preceptor 1 vs Preceptor 2) -->
+        <div id="auditModalCompareCards" class="audit-preceptor-compare-grid mb-3"></div>
+
+        <!-- Barra de alternancia: Ver solo discrepancias vs las 20 preguntas -->
+        <div class="diff-toggle-group mb-3">
+          <button type="button" id="btnToggleOnlyDiffs" class="diff-toggle-btn active btn-danger-mode" onclick="window.AuditManager.toggleDiffView(true)">
+            ⚠️ Ver Solo Preguntas con Discrepancia (<span id="diffCountBadge">0</span>)
+          </button>
+          <button type="button" id="btnToggleAllQuestions" class="diff-toggle-btn" onclick="window.AuditManager.toggleDiffView(false)">
+            📋 Ver las 20 Preguntas
+          </button>
+          <span id="auditDiffSubtitle" class="text-muted ms-auto" style="font-size: 0.8rem;"></span>
         </div>
 
         <div class="table-responsive">
@@ -1016,10 +1052,10 @@
                 <th class="text-center" style="width: 45px;">Ítem</th>
                 <th>Tema / Contenido</th>
                 <th class="text-center">Clave Oficial</th>
-                <th class="text-center">Carga 1</th>
-                <th class="text-center">Carga 2</th>
+                <th class="text-center" id="thPreceptor1">Carga 1</th>
+                <th class="text-center" id="thPreceptor2">Carga 2</th>
                 <th class="text-center">Estado</th>
-                <th class="text-center">Resolución Oficial</th>
+                <th class="text-center" style="min-width: 180px;">Resolución Oficial</th>
               </tr>
             </thead>
             <tbody id="auditDiffTableBody">
@@ -1039,12 +1075,12 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <!-- Carga de Datos y Scripts de la Aplicación -->
-  <script src="data/examConfig.js?v=2027.2"></script>
-  <script src="data/students.js?v=2027.2"></script>
-  <script src="js/firebase-sync.js?v=2027.2"></script>
-  <script src="js/data-service.js?v=2027.2"></script>
-  <script src="js/analytics.js?v=2027.2"></script>
-  <script src="js/audit.js?v=2027.2"></script>
-  <script src="js/app.js?v=2027.2"></script>
+  <script src="data/examConfig.js?v=2027.3"></script>
+  <script src="data/students.js?v=2027.3"></script>
+  <script src="js/firebase-sync.js?v=2027.3"></script>
+  <script src="js/data-service.js?v=2027.3"></script>
+  <script src="js/analytics.js?v=2027.3"></script>
+  <script src="js/audit.js?v=2027.3"></script>
+  <script src="js/app.js?v=2027.3"></script>
 </body>
 </html>
