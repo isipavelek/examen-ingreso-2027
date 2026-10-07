@@ -1265,7 +1265,13 @@
 
       if (nameEl) nameEl.textContent = cur.name;
       if (percentLbl) percentLbl.textContent = `${progress.percent}%`;
-      if (ratioLbl) ratioLbl.textContent = `${progress.loadedCount} de ${progress.totalAssigned} exámenes evaluados`;
+      if (ratioLbl) {
+        if (progress.unsyncedCount > 0) {
+          ratioLbl.innerHTML = `<strong>${progress.loadedCount}</strong> de ${progress.totalAssigned} exámenes evaluados <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); margin-left: 6px;">⚠️ ${progress.unsyncedCount} por subir a la nube</span>`;
+        } else {
+          ratioLbl.textContent = `${progress.loadedCount} de ${progress.totalAssigned} exámenes evaluados`;
+        }
+      }
       if (barFill) {
         barFill.style.width = `${progress.percent}%`;
         barFill.className = `progress-bar-fill ${progress.percent >= 100 ? 'success' : (progress.percent > 0 ? '' : 'warning')}`;
@@ -1277,7 +1283,14 @@
       const kpiMatched = document.getElementById('myKpiMatched');
 
       if (kpiAssigned) kpiAssigned.textContent = progress.totalAssigned;
-      if (kpiLoaded) kpiLoaded.textContent = progress.loadedCount;
+      if (kpiLoaded) {
+        kpiLoaded.textContent = progress.loadedCount;
+        if (progress.unsyncedCount > 0) {
+          kpiLoaded.title = `${progress.unsyncedCount} exámenes guardados en esta PC aún no sincronizados con Firebase. Presioná 'Sincronizar Nube' para subirlos.`;
+        } else {
+          kpiLoaded.title = 'Todos tus exámenes están sincronizados en Firebase Firestore.';
+        }
+      }
       if (kpiPending) kpiPending.textContent = progress.pendingCount;
       if (kpiMatched) kpiMatched.textContent = progress.matchedWithPartner;
 
@@ -1329,7 +1342,9 @@
       list.forEach(item => {
         const s = item.student;
         const myScoreBadge = item.isLoadedByMe
-          ? `<span class="status-pill pill-success">✅ Cargado</span>`
+          ? (item.isSyncedInCloud === false
+              ? `<span class="status-pill pill-warning" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4);" title="Guardado en este navegador. Falta subir a Firebase.">💾 En PC (Pendiente)</span>`
+              : `<span class="status-pill pill-success" title="Sincronizado en Firebase Firestore">✅ Cargado</span>`)
           : `<span class="status-pill pill-warning">⏳ Pendiente</span>`;
 
         const partnerScoreBadge = item.isLoadedByPartner
@@ -1663,26 +1678,46 @@
 
     updateFirebaseStatusBadge(detail) {
       const badge = document.getElementById('firebaseStatusBadge');
-      if (!badge) return;
+      if (badge) {
+        if (detail.status === 'online') {
+          badge.textContent = '🟢 Online (Firestore)';
+          badge.className = 'status-pill pill-success';
+          badge.title = detail.message;
+        } else if (detail.status === 'quota-exceeded') {
+          badge.textContent = '⚠️ Cuota Firebase Agotada';
+          badge.className = 'status-pill pill-danger';
+          badge.title = 'Cuota diaria gratuita (Spark) de Firebase alcanzada. Actualizar a Plan Blaze en Firebase Console para continuar ilimitado.';
+        } else if (detail.status === 'locked') {
+          badge.textContent = '🔒 Reglas bloqueadas en Firebase';
+          badge.className = 'status-pill pill-danger';
+          badge.title = 'Faltan habilitar las Reglas en Firebase Console (pestaña Reglas)';
+        } else if (detail.status === 'connecting') {
+          badge.textContent = '🟡 Conectando...';
+          badge.className = 'status-pill pill-warning';
+        } else {
+          badge.textContent = '🔴 Desconectado';
+          badge.className = 'status-pill pill-danger';
+        }
+      }
+      this.updateSyncButtonState();
+    }
 
-      if (detail.status === 'online') {
-        badge.textContent = '🟢 Online (Firestore)';
-        badge.className = 'status-pill pill-success';
-        badge.title = detail.message;
-      } else if (detail.status === 'quota-exceeded') {
-        badge.textContent = '⚠️ Cuota Firebase Agotada';
-        badge.className = 'status-pill pill-danger';
-        badge.title = 'Cuota diaria gratuita (Spark) de Firebase alcanzada. Actualizar a Plan Blaze en Firebase Console para continuar ilimitado.';
-      } else if (detail.status === 'locked') {
-        badge.textContent = '🔒 Reglas bloqueadas en Firebase';
-        badge.className = 'status-pill pill-danger';
-        badge.title = 'Faltan habilitar las Reglas en Firebase Console (pestaña Reglas)';
-      } else if (detail.status === 'connecting') {
-        badge.textContent = '🟡 Conectando...';
-        badge.className = 'status-pill pill-warning';
+    updateSyncButtonState() {
+      const btn = document.getElementById('btnForceSync');
+      if (!btn || btn.disabled) return;
+
+      const unsyncedTotal = window.FirebaseSyncService && window.FirebaseSyncService.getUnsyncedLocalCount
+        ? window.FirebaseSyncService.getUnsyncedLocalCount()
+        : 0;
+
+      if (unsyncedTotal > 0) {
+        btn.innerHTML = `☁️ Sincronizar Nube <span class="badge" style="background: #ef4444; color: #ffffff; padding: 2px 7px; border-radius: 999px; margin-left: 5px; font-weight: 700;">${unsyncedTotal}</span>`;
+        btn.style.boxShadow = '0 0 10px rgba(239, 68, 68, 0.4)';
+        btn.title = `Hay ${unsyncedTotal} examen(es) guardados en esta PC que aún no se subieron a Firebase. Hacé clic para subirlos ahora.`;
       } else {
-        badge.textContent = '🔴 Desconectado';
-        badge.className = 'status-pill pill-danger';
+        btn.innerHTML = '☁️ Sincronizar Nube';
+        btn.style.boxShadow = '';
+        btn.title = 'Subir inmediatamente todas las calificaciones guardadas en esta computadora a Firebase Firestore';
       }
     }
 
@@ -1690,21 +1725,21 @@
       const btn = document.getElementById('btnForceSync');
       if (btn) {
         btn.disabled = true;
-        btn.textContent = '⏳ Subiendo...';
+        btn.innerHTML = '⏳ Subiendo a la nube...';
       }
 
-      this.showToast('Conectando con Firebase Firestore y sincronizando exámenes locales...', 'info');
+      this.showToast('Verificando exámenes con Firebase Firestore y sincronizando...', 'info');
 
       try {
-        const res = await window.FirebaseSyncService.syncAllLocalToCloud();
+        const res = await window.FirebaseSyncService.syncAllLocalToCloud({ forceCheckServer: true });
         if (res.quotaExceeded) {
           this.showToast(`⚠️ Cuota diaria de Firebase agotada (Spark Plan). Los datos quedan seguros en tu PC. Para sincronizar ya mismo se debe activar el Plan Blaze en Firebase Console.`, 'danger');
-        } else if (res.allUpToDate) {
-          this.showToast(`ℹ️ Todo al día: todos los exámenes ya están sincronizados en Firebase.`, 'info');
         } else if (res.synced > 0) {
-          this.showToast(`✅ ¡Éxito! Se subieron ${res.synced} examen(es) a Firebase Firestore en la nube.`, 'success');
+          this.showToast(`✅ ¡Éxito! Se subieron y sincronizaron ${res.synced} examen(es) a Firebase Firestore en la nube.`, 'success');
+        } else if (res.allUpToDate) {
+          this.showToast(`ℹ️ Todo al día: todos los exámenes de esta computadora ya están sincronizados en Firebase.`, 'info');
         } else if (res.failed > 0) {
-          this.showToast(`🔒 Permiso denegado en Firebase o error de conexión.`, 'danger');
+          this.showToast(`🔒 Hubo un problema al subir (${res.failed} fallaron). Revisá permisos o conexión.`, 'danger');
         } else {
           this.showToast(`ℹ️ Todo al día: no hay exámenes pendientes de subir en esta computadora.`, 'info');
         }
@@ -1717,8 +1752,9 @@
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = '☁️ Sincronizar Nube';
         }
+        this.updateSyncButtonState();
+        this.renderAll();
       }
     }
 
@@ -1743,6 +1779,7 @@
     }
 
     renderAll() {
+      this.updateSyncButtonState();
       if (this.currentTab === 'carga') {
         this.renderStudentSearchList();
         this.renderSelectedStudentCard();
@@ -1761,6 +1798,30 @@
       } else if (this.currentTab === 'exportar') {
         this.renderExportView();
       }
+    }
+
+    handleImportBackupFile(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const content = e.target.result;
+          this.showToast('Importando archivo de respaldo y sincronizando con Firebase...', 'info');
+          const res = await window.FirebaseSyncService.importLocalBackup(content);
+          if (res.success) {
+            this.showToast(`✅ Se importaron ${res.count} exámenes exitosamente a esta PC y a la nube.`, 'success');
+            this.renderAll();
+          } else {
+            this.showToast(`Error al importar: ${res.error}`, 'danger');
+          }
+        } catch (err) {
+          this.showToast(`Error leyendo archivo: ${err.message}`, 'danger');
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsText(file);
     }
   }
 

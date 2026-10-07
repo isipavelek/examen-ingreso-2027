@@ -125,6 +125,11 @@
       this.unsubscribeSubmissions = null;
       this.unsubscribeResolutions = null;
       this.unsubscribeAttendance = null;
+      this.cloudDocIds = new Set();
+      this.cloudDocMap = new Map();
+      this.latestCloudSubmissions = [];
+      this.hasReceivedInitialCloudSubmissions = false;
+      this._isSyncing = false;
       this.init();
     }
 
@@ -273,10 +278,20 @@
           this.triggerStatusChange();
 
           const cloudSubs = [];
+          this.cloudDocIds = new Set();
+          this.cloudDocMap = new Map();
           snapshot.forEach(doc => {
-            cloudSubs.push(doc.data());
+            const data = doc.data();
+            cloudSubs.push(data);
+            this.cloudDocIds.add(doc.id);
+            this.cloudDocMap.set(doc.id, data);
           });
+          this.latestCloudSubmissions = cloudSubs;
+          this.hasReceivedInitialCloudSubmissions = true;
           window.DataService.setSubmissionsFromCloud(cloudSubs);
+
+          // Auto-sincronizar cualquier examen de esta PC que falte en Firestore
+          this.autoSyncMissingLocalExams();
         }, err => handleFirestoreError(err, 'submissions'));
 
       // 2. Escuchar resoluciones oficiales de la Dirección
@@ -299,15 +314,14 @@
           window.DataService.setAttendanceFromCloud(attendMap);
         }, err => handleFirestoreError(err, 'attendance'));
 
-      // 4. Intentar vaciar cola de exámenes pendientes únicamente si hay exámenes en cola y no se agotó la cuota
-      this.flushPendingQueue();
+      // 4. Intentar sincronizar en segundo plano periódicamente si hay exámenes locales pendientes
+      this.autoSyncMissingLocalExams();
       if (!this.syncInterval) {
         this.syncInterval = setInterval(() => {
-          const queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
-          if (queue && queue.length > 0 && this.syncStatus !== 'quota-exceeded') {
-            this.flushPendingQueue();
+          if (this.syncStatus !== 'quota-exceeded') {
+            this.autoSyncMissingLocalExams();
           }
-        }, 60000);
+        }, 45000);
       }
     }
 
@@ -349,75 +363,90 @@
       } catch (e) {}
     }
 
-    async flushPendingQueue() {
-      if (!this.db) return { count: 0, synced: 0, failed: 0, error: 'Sin conexión a base de datos' };
+    autoSyncMissingLocalExams() {
+      if (this._isSyncing || !this.db || !this.hasReceivedInitialCloudSubmissions) return;
       try {
-        const pendingQueue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
-        if (!pendingQueue || pendingQueue.length === 0) {
-          return { count: 0, synced: 0, failed: 0 };
-        }
-
-        let syncedCount = 0;
-        const failed = [];
-        let lastError = null;
-        let quotaExceeded = false;
-
-        for (const item of pendingQueue) {
-          if (!item || !item.id) continue;
-          try {
-            await this.withTimeout(this.db.collection('exam_submissions').doc(item.id).set(item, { merge: true }), 7000);
-            syncedCount++;
-          } catch (e) {
-            lastError = e;
-            failed.push(item);
-            if (e.code === 'resource-exhausted' || (e.message && e.message.includes('Quota exceeded'))) {
-              quotaExceeded = true;
-              this.syncStatus = 'quota-exceeded';
-              this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan)';
-              this.triggerStatusChange();
-              break;
+        const unsyncedCount = this.getUnsyncedLocalCount();
+        const queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
+        if (unsyncedCount > 0 || queue.length > 0) {
+          console.log(`[FirebaseSync] Sincronizando en segundo plano ${unsyncedCount} exámenes locales pendientes...`);
+          this.syncAllLocalToCloud().then(res => {
+            if (res.synced > 0 && window.app && window.app.showToast) {
+              window.app.showToast(`✅ Se sincronizaron automáticamente ${res.synced} examen(es) pendientes a Firebase Firestore en la nube.`, 'success');
             }
-          }
+          }).catch(err => {
+            console.warn('[FirebaseSync] Error en auto-sync de fondo:', err);
+          });
         }
-
-        const processedCount = syncedCount + failed.length;
-        const remaining = pendingQueue.slice(processedCount);
-        const finalQueue = [...failed, ...remaining];
-        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(finalQueue));
-
-        if (quotaExceeded) {
-          return { count: pendingQueue.length, synced: syncedCount, failed: finalQueue.length, quotaExceeded: true, lastError };
-        }
-
-        if (failed.length > 0 && lastError && (lastError.code === 'permission-denied' || lastError.message.includes('insufficient permissions'))) {
-          this.syncStatus = 'locked';
-          this.statusMessage = '🔒 Permiso denegado: Faltan publicar las Reglas en Firebase Console';
-          this.triggerStatusChange();
-        } else if (syncedCount > 0) {
-          this.syncStatus = 'online';
-          this.statusMessage = `🟢 Online (Sincronizados ${syncedCount} exámenes en la nube)`;
-          this.triggerStatusChange();
-        }
-
-        return { count: pendingQueue.length, synced: syncedCount, failed: finalQueue.length, lastError };
       } catch (e) {
-        console.error('Error en flushPendingQueue:', e);
-        return { error: e.message };
+        console.warn('Error en autoSyncMissingLocalExams:', e);
       }
     }
 
-    async syncAllLocalToCloud() {
+    hasCloudSubmission(studentId, preceptorUid) {
+      const docId = `${studentId}_${preceptorUid}`;
+      return this.cloudDocIds ? this.cloudDocIds.has(docId) : false;
+    }
+
+    getUnsyncedLocalCount(preceptorUid = null) {
+      try {
+        const localSaved = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
+        if (!this.cloudDocIds) return 0;
+        return localSaved.filter(item => {
+          if (!item) return false;
+          if (preceptorUid && item.preceptorUid !== preceptorUid) return false;
+          const id = item.id || `${item.studentId}_${item.preceptorUid}`;
+          return !this.cloudDocIds.has(id);
+        }).length;
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    async flushPendingQueue() {
+      return await this.syncAllLocalToCloud();
+    }
+
+    async syncAllLocalToCloud(options = {}) {
       if (!this.db) {
         return { count: 0, synced: 0, failed: 0, error: 'Firestore no conectado' };
       }
+      if (this._isSyncing) {
+        return { count: 0, synced: 0, failed: 0, inProgress: true };
+      }
+      this._isSyncing = true;
       try {
-        const cloudSubs = (window.DataService && window.DataService.submissions) || [];
-        const cloudSet = new Set(cloudSubs.map(s => `${s.studentId}_${s.preceptorUid}`));
+        // 1. Obtener los IDs que REALMENTE existen en Firestore en la nube
+        let cloudDocIds = this.cloudDocIds;
+        let cloudDocMap = this.cloudDocMap;
 
+        // Si aún no recibimos snapshot o se fuerza consulta directa al servidor:
+        if (!this.hasReceivedInitialCloudSubmissions || !cloudDocIds || cloudDocIds.size === 0 || options.forceCheckServer) {
+          try {
+            const snap = await this.withTimeout(this.db.collection('exam_submissions').get(), 10000);
+            cloudDocIds = new Set();
+            cloudDocMap = new Map();
+            snap.forEach(doc => {
+              cloudDocIds.add(doc.id);
+              cloudDocMap.set(doc.id, doc.data());
+            });
+            this.cloudDocIds = cloudDocIds;
+            this.cloudDocMap = cloudDocMap;
+            this.hasReceivedInitialCloudSubmissions = true;
+          } catch (e) {
+            console.warn('No se pudo consultar exam_submissions directamente desde Firestore:', e);
+            if (!cloudDocIds) cloudDocIds = new Set();
+            if (!cloudDocMap) cloudDocMap = new Map();
+          }
+        }
+
+        // 2. Leer las copias locales de este navegador
         const localSaved = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
         const pendingQueue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
 
         const toSyncMap = new Map();
+
+        // A. Agregar elementos pendientes en cola
         pendingQueue.forEach(item => {
           if (item) {
             const id = item.id || `${item.studentId}_${item.preceptorUid}`;
@@ -425,11 +454,22 @@
           }
         });
 
+        // B. Comparar lo guardado en este navegador contra lo que Firestore REALMENTE tiene en la nube
         localSaved.forEach(item => {
           if (item) {
             const id = item.id || `${item.studentId}_${item.preceptorUid}`;
-            if (!cloudSet.has(id)) {
+            const existsInCloud = cloudDocIds.has(id);
+            if (!existsInCloud) {
               toSyncMap.set(id, { ...item, id });
+            } else {
+              const cloudDoc = cloudDocMap.get(id);
+              if (cloudDoc) {
+                const localTs = item.timestamp ? new Date(item.timestamp).getTime() : 0;
+                const cloudTs = cloudDoc.timestamp ? new Date(cloudDoc.timestamp).getTime() : 0;
+                if (localTs > cloudTs) {
+                  toSyncMap.set(id, { ...item, id });
+                }
+              }
             }
           }
         });
@@ -439,40 +479,89 @@
           return { count: 0, synced: 0, failed: 0, allUpToDate: true };
         }
 
+        // 3. Subir a Firestore por lotes (WriteBatch)
+        const itemsToSync = Array.from(toSyncMap.values());
+        const CHUNK_SIZE = 100;
         let syncedCount = 0;
-        const stillPending = [];
+        const failedItems = [];
         let lastError = null;
         let quotaExceeded = false;
 
-        for (const [id, item] of toSyncMap.entries()) {
+        for (let i = 0; i < itemsToSync.length; i += CHUNK_SIZE) {
+          const chunk = itemsToSync.slice(i, i + CHUNK_SIZE);
+          const batch = this.db.batch();
+
+          chunk.forEach(item => {
+            const docRef = this.db.collection('exam_submissions').doc(item.id);
+            batch.set(docRef, item, { merge: true });
+
+            if (item.studentId) {
+              const attendRef = this.db.collection('students_attendance').doc(item.studentId);
+              batch.set(attendRef, {
+                studentId: item.studentId,
+                asistio: !item.isAbsent,
+                updatedBy: item.preceptorName || 'Preceptor',
+                updatedByUid: item.preceptorUid || '',
+                updatedAt: item.timestamp || new Date().toISOString()
+              }, { merge: true });
+            }
+          });
+
           try {
-            await this.withTimeout(this.db.collection('exam_submissions').doc(id).set(item, { merge: true }), 7000);
-            syncedCount++;
-          } catch (e) {
-            lastError = e;
-            stillPending.push(item);
-            if (e.code === 'resource-exhausted' || (e.message && e.message.includes('Quota exceeded'))) {
+            await this.withTimeout(batch.commit(), 15000);
+            syncedCount += chunk.length;
+            chunk.forEach(item => {
+              cloudDocIds.add(item.id);
+              cloudDocMap.set(item.id, item);
+            });
+          } catch (batchErr) {
+            console.warn('Error en batch commit de Firestore, reintentando individualmente:', batchErr);
+            lastError = batchErr;
+            if (batchErr.code === 'resource-exhausted' || (batchErr.message && batchErr.message.includes('Quota exceeded'))) {
               quotaExceeded = true;
+              failedItems.push(...chunk);
               this.syncStatus = 'quota-exceeded';
               this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan)';
               this.triggerStatusChange();
               break;
             }
+
+            // Fallback a escritura individual para el chunk si falló el lote
+            for (const item of chunk) {
+              try {
+                await this.withTimeout(this.db.collection('exam_submissions').doc(item.id).set(item, { merge: true }), 5000);
+                syncedCount++;
+                cloudDocIds.add(item.id);
+                cloudDocMap.set(item.id, item);
+              } catch (singleErr) {
+                failedItems.push(item);
+                lastError = singleErr;
+              }
+            }
           }
         }
 
-        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(stillPending));
+        // Actualizar cola de pendientes solo con los que realmente fallaron
+        localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(failedItems));
+
+        if (syncedCount > 0) {
+          this.syncStatus = 'online';
+          this.statusMessage = `🟢 Online (${syncedCount} exámenes sincronizados en la nube)`;
+          this.triggerStatusChange();
+        }
 
         return {
           count: toSyncMap.size,
           synced: syncedCount,
-          failed: stillPending.length,
+          failed: failedItems.length,
           lastError,
           quotaExceeded
         };
       } catch (err) {
         console.error('Error en syncAllLocalToCloud:', err);
         return { error: err.message };
+      } finally {
+        this._isSyncing = false;
       }
     }
 
@@ -491,6 +580,8 @@
       try {
         await this.withTimeout(this.db.collection('exam_submissions').doc(docId).set(submission, { merge: true }), 7000);
         this.removeFromPendingSyncQueue(docId);
+        if (this.cloudDocIds) this.cloudDocIds.add(docId);
+        if (this.cloudDocMap) this.cloudDocMap.set(docId, submission);
         return { docId, localOnly: false, success: true };
       } catch (err) {
         console.error('Error escribiendo en Firestore:', err);
@@ -502,6 +593,89 @@
           this.triggerStatusChange();
         }
         return { docId, localOnly: true, error: err.message, quotaExceeded };
+      }
+    }
+
+    exportLocalBackup() {
+      try {
+        const localList = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
+        const queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
+        const userName = this.currentProfile ? this.currentProfile.name.toLowerCase() : 'preceptor';
+        const data = {
+          version: '2027.1',
+          exportedAt: new Date().toISOString(),
+          userName: this.currentProfile ? this.currentProfile.name : 'Usuario',
+          userUid: this.currentUser ? this.currentUser.uid : '',
+          submissionsCount: localList.length,
+          savedSubmissions: localList,
+          pendingQueue: queue
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `respaldo_evaluaciones_${userName}_${localList.length}_examenes.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        if (window.app && window.app.showToast) {
+          window.app.showToast(`💾 Descargado respaldo local con ${localList.length} exámenes.`, 'success');
+        }
+        return { success: true, count: localList.length };
+      } catch (e) {
+        console.error('Error al exportar respaldo local:', e);
+        if (window.app && window.app.showToast) {
+          window.app.showToast(`Error al exportar respaldo: ${e.message}`, 'danger');
+        }
+        return { success: false, error: e.message };
+      }
+    }
+
+    async importLocalBackup(fileContent) {
+      try {
+        const parsed = typeof fileContent === 'string' ? JSON.parse(fileContent) : fileContent;
+        const incoming = parsed.savedSubmissions || (Array.isArray(parsed) ? parsed : []);
+        if (!Array.isArray(incoming) || incoming.length === 0) {
+          throw new Error('El archivo no contiene exámenes válidos.');
+        }
+
+        const localList = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
+        const map = new Map();
+        localList.forEach(s => {
+          if (s) {
+            const id = s.id || `${s.studentId}_${s.preceptorUid}`;
+            map.set(id, s);
+          }
+        });
+        incoming.forEach(s => {
+          if (s) {
+            const id = s.id || `${s.studentId}_${s.preceptorUid}`;
+            map.set(id, { ...s, id });
+          }
+        });
+
+        const merged = Array.from(map.values());
+        localStorage.setItem('saved_exam_submissions', JSON.stringify(merged));
+
+        // Refrescar memoria local en DataService
+        if (window.DataService) {
+          window.DataService.submissions = merged;
+          window.DataService.notify();
+        }
+
+        // Subir inmediatamente a Firestore
+        const syncResult = await this.syncAllLocalToCloud({ forceCheckServer: true });
+        if (window.app && window.app.showToast) {
+          window.app.showToast(`✅ Se importaron ${incoming.length} exámenes y se subieron a Firebase.`, 'success');
+        }
+        return { success: true, count: merged.length, syncResult };
+      } catch (e) {
+        console.error('Error al importar respaldo local:', e);
+        if (window.app && window.app.showToast) {
+          window.app.showToast(`Error al importar respaldo: ${e.message}`, 'danger');
+        }
+        return { success: false, error: e.message };
       }
     }
 

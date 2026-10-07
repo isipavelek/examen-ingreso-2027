@@ -534,9 +534,14 @@
           matchStatus = 'unloaded';
         }
 
+        const isSyncedInCloud = window.FirebaseSyncService && window.FirebaseSyncService.hasCloudSubmission
+          ? window.FirebaseSyncService.hasCloudSubmission(st.id, preceptorUid)
+          : true;
+
         return {
           student: st,
           isLoadedByMe,
+          isSyncedInCloud,
           myScore: mySub ? mySub.scoreTotal : null,
           partnerName,
           partnerScore,
@@ -549,6 +554,10 @@
       const pendingCount = Math.max(0, targetQuota - loadedCount);
       const percent = Math.min(100, Math.round((loadedCount / targetQuota) * 100));
 
+      const unsyncedCount = window.FirebaseSyncService && window.FirebaseSyncService.getUnsyncedLocalCount
+        ? window.FirebaseSyncService.getUnsyncedLocalCount(preceptorUid)
+        : 0;
+
       return {
         preceptor,
         targetQuota,
@@ -559,6 +568,7 @@
         matchedWithPartner,
         discrepancyWithPartner,
         partnerPending,
+        unsyncedCount,
         studentDetails
       };
     }
