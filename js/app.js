@@ -497,8 +497,8 @@
         if (totalEl) totalEl.textContent = calc.scoreTotal.toFixed(1);
 
         if (statusEl) {
-          const isPassed = calc.scoreTotal >= 6.0;
-          statusEl.textContent = isPassed ? 'APROBADO' : 'NO ALCANZA';
+          const isPassed = calc.scoreTotal >= window.DataService.getPassThreshold();
+          statusEl.textContent = isPassed ? 'PASA' : 'NO PASA';
           statusEl.className = `score-badge ${isPassed ? 'badge-passed' : 'badge-failed'}`;
         }
       }
@@ -1211,6 +1211,8 @@
       if (!previewBody) return;
 
       const consolidated = window.DataService.getConsolidatedResults();
+      const cur = window.DataService.getCurrentUser();
+      const isAdmin = !!(cur && cur.isAdmin);
       let html = '';
 
       const sorted = [...consolidated].sort((a, b) => (b.finalScore || -1) - (a.finalScore || -1));
@@ -1232,7 +1234,7 @@
             <td class="text-center">${mathDisplay}</td>
             <td class="text-center">${langDisplay}</td>
             <td class="text-center"><strong>${scoreDisplay}</strong></td>
-            <td class="text-center">${item.isPassed ? 'Aprobado' : (item.finalScore !== null ? 'Desaprobado' : '-')}</td>
+            <td class="text-center">${this.renderInstanceConditionCell(item, isAdmin)}</td>
           </tr>
         `;
       });
@@ -1249,7 +1251,8 @@
         'Preceptor_Asignado_1', 'Preceptor_Asignado_2',
         'Escuela de Origen', 'Tutor Familiar', 'Telefono', 'Email',
         'Tema Examen', 'Nota Matematica (max 5)', 'Nota Lengua (max 5)',
-        'Nota Final (max 10)', 'Estado Aprobacion'
+        'Nota Final (max 10)', 'Condicion Proxima Instancia', 'Origen Condicion',
+        'Nota Clave Anterior', 'Diferencia por Correccion P14A/P16B', 'Orden Clave Anterior'
       ];
 
       for (let i = 1; i <= 20; i++) {
@@ -1258,6 +1261,10 @@
 
       const rows = [headers];
       const sorted = [...consolidated].sort((a, b) => (b.finalScore || -1) - (a.finalScore || -1));
+      const ordenAnterior = new Map();
+      [...consolidated]
+        .sort((a, b) => (b.finalScoreAnterior || -1) - (a.finalScoreAnterior || -1))
+        .forEach((item, i) => ordenAnterior.set(item.student.id, i + 1));
 
       sorted.forEach((item, index) => {
         const s = item.student;
@@ -1279,7 +1286,11 @@
           item.finalMath !== null ? item.finalMath : '',
           item.finalLang !== null ? item.finalLang : '',
           item.finalScore !== null ? item.finalScore : '',
-          item.isPassed === true ? 'APROBADO' : (item.isPassed === false ? 'DESAPROBADO' : '')
+          item.pasa === true ? 'PASA' : (item.pasa === false ? 'NO PASA' : 'PENDIENTE'),
+          this.getInstanceOriginLabel(item.pasaOrigen),
+          item.finalScoreAnterior !== null ? item.finalScoreAnterior : '',
+          item.finalScoreAnterior !== null ? Math.round((item.finalScore - item.finalScoreAnterior) * 100) / 100 : '',
+          ordenAnterior.get(s.id)
         ];
 
         for (let i = 1; i <= 20; i++) {
@@ -1299,6 +1310,102 @@
       document.body.removeChild(link);
 
       this.showToast('Archivo CSV generado y descargado correctamente', 'success');
+    }
+
+    getInstanceOriginLabel(origen) {
+      return {
+        nota: `Por nota (${window.DataService.getPassThreshold()} o más)`,
+        lista_direccion: 'Por Dirección',
+        direccion: 'Por Dirección',
+        ausente: 'Ausente',
+        pendiente: 'Nota pendiente'
+      }[origen] || '';
+    }
+
+    renderInstanceConditionCell(item, isAdmin) {
+      let pill;
+      if (item.pasa === true) pill = '<span class="status-pill pill-success">✅ Pasa</span>';
+      else if (item.pasa === false) pill = '<span class="status-pill pill-danger">❌ No pasa</span>';
+      else pill = '<span class="status-pill pill-warning">⏳ Pendiente</span>';
+
+      const isManual = item.pasaOrigen === 'direccion' || item.pasaOrigen === 'lista_direccion';
+      const originHtml = `<small class="d-block text-muted" style="font-size: 0.7rem;">${isManual ? '⚖️ ' : ''}${this.getInstanceOriginLabel(item.pasaOrigen)}</small>`;
+      if (!isAdmin) return pill + originHtml;
+
+      const hasOverride = item.pasaOrigen === 'direccion';
+      const current = hasOverride ? (item.pasa ? 'pasa' : 'no_pasa') : 'auto';
+      const select = `
+        <select class="form-select form-select-sm no-print mt-1" style="font-size: 0.75rem; min-width: 150px;"
+          onchange="window.app.changeInstanceCondition('${item.student.id}', this.value)" title="Dirección puede cambiar la condición en cualquier momento">
+          <option value="auto" ${current === 'auto' ? 'selected' : ''}>Automático</option>
+          <option value="pasa" ${current === 'pasa' ? 'selected' : ''}>Pasa (Dirección)</option>
+          <option value="no_pasa" ${current === 'no_pasa' ? 'selected' : ''}>No pasa (Dirección)</option>
+        </select>`;
+      return pill + originHtml + select;
+    }
+
+    async changeInstanceCondition(studentId, value) {
+      const pasa = value === 'pasa' ? true : (value === 'no_pasa' ? false : null);
+      const student = window.DataService.getStudentById(studentId);
+      const name = student ? `${student.apellido}, ${student.nombre}` : studentId;
+      try {
+        await window.DataService.setInstanceOverride(studentId, pasa);
+        const msg = pasa === null ? 'vuelve a la condición automática por nota' : (pasa ? 'PASA a la próxima instancia' : 'NO PASA a la próxima instancia');
+        this.showToast(`⚖️ ${name}: ${msg}. Resultado del estudiante actualizado.`, 'success');
+      } catch (err) {
+        this.showToast(`Error al cambiar la condición: ${err.message}`, 'danger');
+        this.renderExportView();
+      }
+    }
+
+    async publishStudentResults() {
+      if (!confirm('¿Publicar los resultados para que cada estudiante los vea ingresando con su DNI?\n\nSe publican sus respuestas (bien o mal), la nota final y si pasa o no pasa a la próxima instancia. No se publica quién corrigió ni cuántas veces.')) return;
+      try {
+        const count = await window.DataService.publishAllStudentResults();
+        this.showToast(`📤 Resultados publicados para ${count} estudiantes`, 'success');
+      } catch (err) {
+        this.showToast(`Error al publicar resultados: ${err.message}`, 'danger');
+      }
+    }
+
+    // Listas de la próxima instancia: solo estudiantes que pasan, con datos básicos y orden alfabético.
+    // PdL 16/10: cronograma general. PdL 30/10: cronograma alternativo. Matemática 23/10: todos los que pasan.
+    exportNextInstanceLists() {
+      if (typeof XLSX === 'undefined') {
+        this.showToast('No se pudo cargar el generador de Excel. Revisá la conexión a internet y recargá la página.', 'danger');
+        return;
+      }
+
+      const ds = window.DataService;
+      const passing = ds.getConsolidatedResults()
+        .filter(item => item.pasa === true)
+        .map(item => ({ student: item.student, cronograma: ds.getNextInstanceSchedule(item.student) }))
+        .sort((a, b) =>
+          a.student.apellido.localeCompare(b.student.apellido, 'es', { sensitivity: 'base' }) ||
+          a.student.nombre.localeCompare(b.student.nombre, 'es', { sensitivity: 'base' }));
+
+      const lists = [
+        { sheet: 'PdL 16-10', title: 'Examen de Prácticas del Lenguaje - Viernes 16 de octubre', rows: passing.filter(p => p.cronograma === 'general') },
+        { sheet: 'Matemática 23-10', title: 'Examen de Matemática - Viernes 23 de octubre', rows: passing },
+        { sheet: 'PdL 30-10', title: 'Examen de Prácticas del Lenguaje - Viernes 30 de octubre', rows: passing.filter(p => p.cronograma === 'alternativo') }
+      ];
+
+      const wb = XLSX.utils.book_new();
+      lists.forEach(list => {
+        const aoa = [
+          ['EST UTN San Miguel - Ingreso 2027'],
+          [`${list.title} (Acreditación 13:45 hs - Examen 14:15 a 16:15 hs)`],
+          [],
+          ['N°', 'Apellido', 'Nombre', 'DNI']
+        ];
+        list.rows.forEach((p, i) => aoa.push([i + 1, p.student.apellido, p.student.nombre, String(p.student.dni)]));
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 30 }, { wch: 12 }];
+        XLSX.utils.book_append_sheet(wb, ws, list.sheet);
+      });
+
+      XLSX.writeFile(wb, `Listas_Proxima_Instancia_Ingreso_2027_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      this.showToast(`📋 Listas descargadas: PdL 16/10 (${lists[0].rows.length}), Matemática 23/10 (${lists[1].rows.length}), PdL 30/10 (${lists[2].rows.length})`, 'success');
     }
 
     printOfficialActa() {

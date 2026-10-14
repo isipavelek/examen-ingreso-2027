@@ -62,6 +62,9 @@ Para corroborar la corrección humana sin sobrecargar al equipo:
 
 ## 🚀 Cómo Abrir la Aplicación
 
-1. Hacé doble clic en [`index.html`](file:///c:/Users/ipave/Desktop/Examen%20de%20ingreso/index.html) en tu navegador habitual, o abrí [**http://localhost:8080**](http://localhost:8080).
+- **Estudiantes:** la página principal (`index.html`, la raíz del sitio) es la consulta de resultados con DNI.
+- **Personal (Dirección, Vicedirección y Preceptores):** ingresan por `/EST/` (`EST/index.html`). Con un servidor local: [**http://localhost:8080/EST/**](http://localhost:8080/EST/).
+
+1. Abrí `EST/index.html` en tu navegador habitual, o la dirección `/EST/` del sitio publicado.
 2. Verás la pantalla de inicio de sesión de Firebase.
 3. Hacé clic en tu nombre o ingresá tu correo y contraseña para acceder.

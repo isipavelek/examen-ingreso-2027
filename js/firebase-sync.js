@@ -133,6 +133,34 @@
       this.init();
     }
 
+    async checkFirestoreQuotaFast() {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const resp = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents/exam_submissions?key=${FIREBASE_CONFIG.apiKey}&pageSize=1`,
+          {
+            method: 'GET',
+            signal: controller.signal,
+            headers: { 'Accept': 'application/json' }
+          }
+        );
+        clearTimeout(timeoutId);
+
+        if (resp.status === 429) {
+          return { isQuotaExceeded: true, status: 429, message: 'Cuota diaria de Firebase agotada (Spark Plan)' };
+        }
+
+        const data = await resp.json().catch(() => ({}));
+        if (data && data.error && (data.error.code === 429 || data.error.status === 'RESOURCE_EXHAUSTED')) {
+          return { isQuotaExceeded: true, status: 429, message: data.error.message || 'Cuota diaria de Firebase agotada' };
+        }
+        return { isQuotaExceeded: false, status: resp.status };
+      } catch (err) {
+        return { isQuotaExceeded: false, error: err.message };
+      }
+    }
+
     init() {
       if (typeof firebase === 'undefined') {
         console.error('Firebase SDK no cargado en el documento.');
@@ -153,11 +181,19 @@
         this.statusMessage = '🟢 Firebase Firestore Conectado';
         this.triggerStatusChange();
 
-        // 1. Escuchar estado de sesión de Firebase Authentication
-        this.setupAuthListener();
+        // Chequeo proactivo e instantáneo de cuota
+        this.checkFirestoreQuotaFast().then(q => {
+          if (q.isQuotaExceeded) {
+            this.syncStatus = 'quota-exceeded';
+            this.statusMessage = '⚠️ Cuota diaria de Firebase alcanzada (Spark Plan). Los datos quedan seguros en tu PC.';
+            this.triggerStatusChange();
+          }
+        }).catch(() => {});
 
-        // 2. Escuchar cambios de Firestore en tiempo real
-        this.setupFirestoreListeners();
+        // 1. Escuchar estado de sesión de Firebase Authentication.
+        //    Los listeners de Firestore se inician recién con un usuario autorizado (ver setupAuthListener),
+        //    así funcionan con reglas que restringen la lectura al personal.
+        this.setupAuthListener();
       } catch (err) {
         console.error('Error inicializando Firebase:', err);
         this.syncStatus = 'error';
@@ -194,6 +230,7 @@
             this.currentProfile = authData;
             console.log('Firebase Auth exitoso:', authData.name, 'UID:', firebaseUser.uid);
             window.DataService.setCurrentUserProfile(authData);
+            this.setupFirestoreListeners();
             this.hideLoginModal();
             if (window.app) {
               window.app.onUserLoggedIn(authData);
@@ -206,6 +243,7 @@
           }
         } else {
           this.currentProfile = null;
+          this.teardownFirestoreListeners();
           this.showLoginModal();
         }
         this.triggerAuthChange(this.currentProfile);
@@ -254,8 +292,18 @@
 
     // --- LISTENERS EN TIEMPO REAL FIRESTORE ---
 
+    teardownFirestoreListeners() {
+      ['unsubscribeSubmissions', 'unsubscribeResolutions', 'unsubscribeAttendance', 'unsubscribeInstanceOverrides', 'unsubscribeDeleted']
+        .forEach(key => {
+          if (typeof this[key] === 'function') this[key]();
+          this[key] = null;
+        });
+      this.listenersActive = false;
+    }
+
     setupFirestoreListeners() {
-      if (!this.isInitialized || !this.db) return;
+      if (!this.isInitialized || !this.db || this.listenersActive) return;
+      this.listenersActive = true;
 
       const handleFirestoreError = (err, context) => {
         console.error(`Error en listener Firestore (${context}):`, err);
@@ -314,6 +362,16 @@
           window.DataService.setAttendanceFromCloud(attendMap);
         }, err => handleFirestoreError(err, 'attendance'));
 
+      // 3b. Escuchar condiciones (pasa / no pasa) definidas por Dirección
+      this.unsubscribeInstanceOverrides = this.db.collection('instance_overrides')
+        .onSnapshot(snapshot => {
+          const overrides = {};
+          snapshot.forEach(doc => {
+            overrides[doc.id] = doc.data();
+          });
+          window.DataService.setInstanceOverridesFromCloud(overrides);
+        }, err => handleFirestoreError(err, 'instance_overrides'));
+
       // 4. Escuchar anulaciones y eliminaciones de exámenes para propagar entre PCs
       try {
         this.unsubscribeDeleted = this.db.collection('deleted_submissions')
@@ -334,8 +392,18 @@
         this.syncInterval = setInterval(() => {
           if (this.syncStatus !== 'quota-exceeded') {
             this.autoSyncMissingLocalExams();
+          } else {
+            // Verificar si el Director ya activó el Plan Blaze o se renovó la cuota
+            this.checkFirestoreQuotaFast().then(q => {
+              if (!q.isQuotaExceeded) {
+                this.syncStatus = 'online';
+                this.statusMessage = '🟢 Firebase Firestore Conectado';
+                this.triggerStatusChange();
+                this.autoSyncMissingLocalExams();
+              }
+            }).catch(() => {});
           }
-        }, 45000);
+        }, 30000);
       }
     }
 
@@ -467,14 +535,29 @@
       }
       this._isSyncing = true;
       try {
-        // 1. Obtener los IDs que REALMENTE existen en Firestore en la nube
+        // Chequeo proactivo e instantáneo (<300ms) de cuota Firestore
+        const quotaCheck = await this.checkFirestoreQuotaFast();
+        if (quotaCheck.isQuotaExceeded) {
+          this.syncStatus = 'quota-exceeded';
+          this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan). Los datos están protegidos en tu PC.';
+          this.triggerStatusChange();
+          return {
+            count: 0,
+            synced: 0,
+            failed: 0,
+            quotaExceeded: true,
+            error: 'Cuota diaria de Firebase alcanzada (Spark Plan). Los exámenes están 100% seguros guardados en esta PC.'
+          };
+        }
+
+        // 1. Obtener los IDs que existen en Firestore en la nube
         let cloudDocIds = this.cloudDocIds;
         let cloudDocMap = this.cloudDocMap;
 
         // Si aún no recibimos snapshot o se fuerza consulta directa al servidor:
         if (!this.hasReceivedInitialCloudSubmissions || !cloudDocIds || cloudDocIds.size === 0 || options.forceCheckServer) {
           try {
-            const snap = await this.withTimeout(this.db.collection('exam_submissions').get(), 10000);
+            const snap = await this.withTimeout(this.db.collection('exam_submissions').get(), 8000);
             cloudDocIds = new Set();
             cloudDocMap = new Map();
             snap.forEach(doc => {
@@ -486,6 +569,12 @@
             this.hasReceivedInitialCloudSubmissions = true;
           } catch (e) {
             console.warn('No se pudo consultar exam_submissions directamente desde Firestore:', e);
+            if (e && (e.code === 'resource-exhausted' || (e.message && e.message.includes('Quota exceeded')))) {
+              this.syncStatus = 'quota-exceeded';
+              this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan)';
+              this.triggerStatusChange();
+              return { count: 0, synced: 0, failed: 0, quotaExceeded: true, error: e.message };
+            }
             if (!cloudDocIds) cloudDocIds = new Set();
             if (!cloudDocMap) cloudDocMap = new Map();
           }
@@ -533,9 +622,9 @@
           return { count: 0, synced: 0, failed: 0, allUpToDate: true };
         }
 
-        // 3. Subir a Firestore por lotes (WriteBatch)
+        // 3. Subir a Firestore por lotes moderados (CHUNK_SIZE = 20) para evitar saturación de red y timeouts
         const itemsToSync = Array.from(toSyncMap.values());
-        const CHUNK_SIZE = 100;
+        const CHUNK_SIZE = 20;
         let syncedCount = 0;
         const failedItems = [];
         let lastError = null;
@@ -547,47 +636,56 @@
 
           chunk.forEach(item => {
             const docRef = this.db.collection('exam_submissions').doc(item.id);
+            // SÓLO subimos exam_submissions en el lote. No duplicamos con students_attendance para ahorrar 50% de escrituras.
             batch.set(docRef, item, { merge: true });
-
-            if (item.studentId) {
-              const attendRef = this.db.collection('students_attendance').doc(item.studentId);
-              batch.set(attendRef, {
-                studentId: item.studentId,
-                asistio: !item.isAbsent,
-                updatedBy: item.preceptorName || 'Preceptor',
-                updatedByUid: item.preceptorUid || '',
-                updatedAt: item.timestamp || new Date().toISOString()
-              }, { merge: true });
-            }
           });
 
           try {
-            await this.withTimeout(batch.commit(), 15000);
+            await this.withTimeout(batch.commit(), 10000);
             syncedCount += chunk.length;
             chunk.forEach(item => {
               cloudDocIds.add(item.id);
               cloudDocMap.set(item.id, item);
             });
           } catch (batchErr) {
-            console.warn('Error en batch commit de Firestore, reintentando individualmente:', batchErr);
+            console.warn('Error en batch commit de Firestore:', batchErr);
             lastError = batchErr;
-            if (batchErr.code === 'resource-exhausted' || (batchErr.message && batchErr.message.includes('Quota exceeded'))) {
+
+            // Verificar si fue por cuota agotada
+            const isQuota = (batchErr.code === 'resource-exhausted') ||
+                            (batchErr.message && batchErr.message.includes('Quota exceeded')) ||
+                            ((await this.checkFirestoreQuotaFast()).isQuotaExceeded);
+
+            if (isQuota) {
               quotaExceeded = true;
-              failedItems.push(...chunk);
+              failedItems.push(...itemsToSync.slice(i));
               this.syncStatus = 'quota-exceeded';
               this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan)';
               this.triggerStatusChange();
+              break; // DETENER INMEDIATAMENTE: no hacer más llamadas ni congelar la pantalla
+            }
+
+            // Si dio timeout, NO iterar de a uno por 5 segundos para no congelar la pantalla durante minutos!
+            if (batchErr.code === 'timeout') {
+              console.warn('Batch commit agotó el tiempo de espera (timeout). Abortando para no congelar la interfaz.');
+              failedItems.push(...chunk);
               break;
             }
 
-            // Fallback a escritura individual para el chunk si falló el lote
+            // Fallback ligero: intentar individualmente sólo hasta 2 items para diagnosticar
+            let singleFails = 0;
             for (const item of chunk) {
+              if (singleFails >= 2) {
+                failedItems.push(item);
+                continue;
+              }
               try {
-                await this.withTimeout(this.db.collection('exam_submissions').doc(item.id).set(item, { merge: true }), 5000);
+                await this.withTimeout(this.db.collection('exam_submissions').doc(item.id).set(item, { merge: true }), 3000);
                 syncedCount++;
                 cloudDocIds.add(item.id);
                 cloudDocMap.set(item.id, item);
               } catch (singleErr) {
+                singleFails++;
                 failedItems.push(item);
                 lastError = singleErr;
               }
@@ -595,10 +693,10 @@
           }
         }
 
-        // Actualizar cola de pendientes solo con los que realmente fallaron
+        // Actualizar cola de pendientes solo con los que realmente no se pudieron subir
         localStorage.setItem('pending_cloud_sync_queue', JSON.stringify(failedItems));
 
-        if (syncedCount > 0) {
+        if (syncedCount > 0 && !quotaExceeded) {
           this.syncStatus = 'online';
           this.statusMessage = `🟢 Online (${syncedCount} exámenes sincronizados en la nube)`;
           this.triggerStatusChange();
@@ -623,30 +721,30 @@
       const docId = `${submission.studentId}_${submission.preceptorUid}`;
       submission.id = docId;
 
-      // 1. Asegurar copia de seguridad local permanente en el navegador
+      // 1. Asegurar copia de seguridad local permanente en el navegador SIEMPRE
       this.saveToLocalStorage(submission);
 
-      if (!this.db) {
+      if (!this.db || this.syncStatus === 'quota-exceeded') {
         this.addToPendingSyncQueue(submission);
-        return { docId, localOnly: true, error: 'Firestore no conectado' };
+        return { docId, localOnly: true, quotaExceeded: this.syncStatus === 'quota-exceeded' };
       }
 
       try {
-        await this.withTimeout(this.db.collection('exam_submissions').doc(docId).set(submission, { merge: true }), 7000);
+        await this.withTimeout(this.db.collection('exam_submissions').doc(docId).set(submission, { merge: true }), 5000);
         this.removeFromPendingSyncQueue(docId);
         if (this.cloudDocIds) this.cloudDocIds.add(docId);
         if (this.cloudDocMap) this.cloudDocMap.set(docId, submission);
         return { docId, localOnly: false, success: true };
       } catch (err) {
-        console.error('Error escribiendo en Firestore:', err);
+        console.warn('Error escribiendo en Firestore:', err);
         this.addToPendingSyncQueue(submission);
-        const quotaExceeded = err.code === 'resource-exhausted' || (err.message && err.message.includes('Quota exceeded'));
-        if (quotaExceeded) {
+        const isQuota = err.code === 'resource-exhausted' || (err.message && err.message.includes('Quota exceeded'));
+        if (isQuota) {
           this.syncStatus = 'quota-exceeded';
           this.statusMessage = '⚠️ Cuota diaria de Firebase agotada (Spark Plan)';
           this.triggerStatusChange();
         }
-        return { docId, localOnly: true, error: err.message, quotaExceeded };
+        return { docId, localOnly: true, error: err.message, quotaExceeded: isQuota };
       }
     }
 
@@ -765,10 +863,20 @@
           window.DataService.notify();
         }
 
-        // Subir inmediatamente a Firestore
-        const syncResult = await this.syncAllLocalToCloud({ forceCheckServer: true });
+        // Subir a Firestore si la conexión está disponible
+        let syncResult = null;
+        try {
+          syncResult = await this.syncAllLocalToCloud({ forceCheckServer: true });
+        } catch (syncErr) {
+          console.warn('No se pudo subir inmediatamente tras importar:', syncErr);
+        }
+
         if (window.app && window.app.showToast) {
-          window.app.showToast(`✅ Se importaron ${incoming.length} exámenes y se subieron a Firebase.`, 'success');
+          if (syncResult && syncResult.quotaExceeded) {
+            window.app.showToast(`✅ Se integraron ${incoming.length} exámenes a este equipo (la subida a Firebase se completará al renovar cuota o activar Blaze).`, 'warning');
+          } else {
+            window.app.showToast(`✅ Se importaron ${incoming.length} exámenes exitosamente a este equipo.`, 'success');
+          }
         }
         return { success: true, count: merged.length, syncResult };
       } catch (e) {
@@ -787,6 +895,27 @@
       } catch (err) {
         console.warn('Error guardando resolución:', err);
       }
+    }
+
+    async pushInstanceOverride(studentId, record) {
+      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
+      const ref = this.db.collection('instance_overrides').doc(studentId);
+      await this.withTimeout(record ? ref.set(record) : ref.delete(), 7000);
+    }
+
+    // Publica en 'student_results/{dni}' lo que cada estudiante puede ver con su DNI
+    async publishStudentResults(docs) {
+      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
+      const valid = (docs || []).filter(d => d && d.dni);
+      const BATCH_SIZE = 400;
+      for (let i = 0; i < valid.length; i += BATCH_SIZE) {
+        const batch = this.db.batch();
+        valid.slice(i, i + BATCH_SIZE).forEach(d => {
+          batch.set(this.db.collection('student_results').doc(d.dni), d);
+        });
+        await this.withTimeout(batch.commit(), 20000);
+      }
+      return valid.length;
     }
 
     async pushAttendance(studentId, asistio) {

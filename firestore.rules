@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Reglas propuestas para el proyecto exingutn2027.
+// Se publican desde Firebase Console > Firestore Database > Reglas (copiar y pegar todo este archivo).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isDireccion() {
+      return request.auth != null && request.auth.uid in [
+        'uNHF999HedgtuI5BQDpOOH1eBD03', // Director General
+        'laVFIzdRPWPFUvPWBdGcZIlZPSA2'  // Vicedirección
+      ];
+    }
+
+    function isStaff() {
+      return isDireccion() || (request.auth != null && request.auth.uid in [
+        '1OaYaghiGSTs0YAiKaRjIKJfk4g2', // Cecilia
+        '5fqlfqIFCHUwY2RfBK10HcoFu2H2', // Adrian
+        'UQj5suJsRmfbHlj7bm7nx5VOf692', // Benhamin
+        'd57D2kOpFWS8vMLVOBPWFb7kn2q1', // Geraldine
+        'M4uLZtXQO7ezGS5M8vRd0lF9Vxj2', // Karen
+        'kmKzi7TRkcTFEMnS3BQ3Gq5NDHe2', // Nestor
+        'yPNVQ9Ct4nVOtzdE9SyXao8fwW12'  // Emilia
+      ]);
+    }
+
+    // Datos internos: solo personal autenticado (los estudiantes no pueden ver cargas ni correctores)
+    match /exam_submissions/{id}     { allow read, write: if isStaff(); }
+    match /deleted_submissions/{id}  { allow read, write: if isStaff(); }
+    match /students_attendance/{id}  { allow read, write: if isStaff(); }
+    match /exam_resolutions/{id}     { allow read: if isStaff(); allow write: if isDireccion(); }
+    match /instance_overrides/{id}   { allow read: if isStaff(); allow write: if isDireccion(); }
+
+    // Resultado publicado para cada estudiante: se lee un documento por DNI, nunca el listado completo
+    match /student_results/{dni} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if isDireccion();
+    }
+  }
+}

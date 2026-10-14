@@ -32,7 +32,7 @@
         sumTotal += e.finalScore;
         sumMath += e.finalMath;
         sumLang += e.finalLang;
-        if (e.finalScore >= 6.0) passCount++;
+        if (e.pasa) passCount++;
       });
 
       const avgTotal = evaluatedCount > 0 ? (sumTotal / evaluatedCount).toFixed(2) : '0.00';
@@ -88,7 +88,7 @@
         const sum = ev.reduce((acc, curr) => acc + curr.finalScore, 0);
         const sumM = ev.reduce((acc, curr) => acc + curr.finalMath, 0);
         const sumL = ev.reduce((acc, curr) => acc + curr.finalLang, 0);
-        const pass = ev.filter(c => c.finalScore >= 6.0).length;
+        const pass = ev.filter(c => c.pasa).length;
 
         return {
           aula,
@@ -113,7 +113,7 @@
         if (c.finalScore !== null) {
           schoolMap[esc].evaluated++;
           schoolMap[esc].sumScore += c.finalScore;
-          if (c.finalScore >= 6.0) schoolMap[esc].passed++;
+          if (c.pasa) schoolMap[esc].passed++;
         }
       });
 
@@ -128,20 +128,20 @@
 
       // 4. Distribución de notas (Histograma)
       const distribution = {
-        '0 - 3.5 (Insuficiente)': 0,
-        '4 - 5.5 (Regular)': 0,
-        '6 - 6.5 (Aprobado Básico)': 0,
-        '7 - 8.5 (Bueno / Muy Bueno)': 0,
-        '9 - 10 (Sobresaliente)': 0
+        '0 - 2.5': 0,
+        '3 - 4.5': 0,
+        '5 - 6.5': 0,
+        '7 - 8.5': 0,
+        '9 - 10': 0
       };
 
       evaluated.forEach(e => {
         const s = e.finalScore;
-        if (s < 4.0) distribution['0 - 3.5 (Insuficiente)']++;
-        else if (s < 6.0) distribution['4 - 5.5 (Regular)']++;
-        else if (s < 7.0) distribution['6 - 6.5 (Aprobado Básico)']++;
-        else if (s < 9.0) distribution['7 - 8.5 (Bueno / Muy Bueno)']++;
-        else distribution['9 - 10 (Sobresaliente)']++;
+        if (s < 3.0) distribution['0 - 2.5']++;
+        else if (s < 5.0) distribution['3 - 4.5']++;
+        else if (s < 7.0) distribution['5 - 6.5']++;
+        else if (s < 9.0) distribution['7 - 8.5']++;
+        else distribution['9 - 10']++;
       });
 
       return {

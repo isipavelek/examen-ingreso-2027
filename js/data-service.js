@@ -13,8 +13,9 @@
       try {
         localSubs = JSON.parse(localStorage.getItem('saved_exam_submissions') || '[]');
       } catch (e) {}
-      this.submissions = localSubs;
+      this.submissions = localSubs.map(s => this.rescoreWithCurrentKey(s));
       this.resolutions = {}; // studentId -> resolution object
+      this.instanceOverrides = {}; // studentId -> { pasa, updatedBy, updatedAt } definido por Dirección
       this.currentUserProfile = null;
       this.listeners = new Set();
       this.init();
@@ -45,6 +46,7 @@
 
     setCurrentUserProfile(profile) {
       this.currentUserProfile = profile;
+      this.repairIncompleteResolutions();
       this.notify();
     }
 
@@ -88,12 +90,99 @@
         }
       });
 
-      this.submissions = Array.from(map.values());
+      this.submissions = Array.from(map.values()).map(s => this.rescoreWithCurrentKey(s));
+      this.repairIncompleteResolutions();
       this.notify();
     }
 
     setResolutionsFromCloud(cloudRes) {
-      this.resolutions = cloudRes || {};
+      this.resolutions = {};
+      Object.keys(cloudRes || {}).forEach(id => {
+        this.resolutions[id] = this.rescoreWithCurrentKey(cloudRes[id]);
+      });
+      this.repairIncompleteResolutions();
+      this.notify();
+    }
+
+    // Recalcula la nota con la clave vigente a partir de las respuestas cargadas.
+    // Las notas guardadas en Firestore no se modifican: solo se recalcula en memoria.
+    rescoreWithCurrentKey(rec) {
+      if (!rec || rec.isAbsent || (rec.tema !== 'A' && rec.tema !== 'B')) return rec;
+      const calc = this.calculateScore(rec.tema, rec.answers || {});
+      return {
+        ...rec,
+        scoreMath: calc.scoreMath,
+        scoreLang: calc.scoreLang,
+        scoreTotal: calc.scoreTotal,
+        correctCount: calc.correctCount
+      };
+    }
+
+    // Completa las 20 respuestas de una resolución: las preguntas que no vinieron en la
+    // resolución se toman de las cargas de los preceptores (coincidentes o con la clave oficial).
+    buildCompleteResolutionAnswers(studentId, tema, partialAnswers) {
+      const subs = this.getSubmissionsForStudent(studentId).filter(s => !s.isAbsent);
+      const questions = (window.EXAM_CONFIG && window.EXAM_CONFIG.questions) || [];
+      const answers = {};
+
+      questions.forEach(q => {
+        const given = partialAnswers && (partialAnswers[q.n] || partialAnswers[String(q.n)]);
+        if (given) {
+          answers[q.n] = String(given).trim().toUpperCase();
+          return;
+        }
+        const loaded = subs
+          .map(s => (s.answers && s.answers[q.n]) ? String(s.answers[q.n]).trim().toUpperCase() : '')
+          .filter(Boolean);
+        if (loaded.length === 0) return;
+        const key = tema === 'B' ? q.temaB : q.temaA;
+        // Mismo criterio que el selector del modal: si alguno coincide con la clave, esa; si no, la de la 1ra carga
+        answers[q.n] = loaded.includes(key) ? key : loaded[0];
+      });
+
+      return answers;
+    }
+
+    // Repara resoluciones guardadas solo con las preguntas discrepantes (nota oficial incompleta)
+    repairIncompleteResolutions() {
+      if (!this.resolutions) return;
+      const totalQuestions = ((window.EXAM_CONFIG && window.EXAM_CONFIG.questions) || []).length;
+      const cloudSubsReady = !!(window.FirebaseSyncService && window.FirebaseSyncService.hasReceivedInitialCloudSubmissions);
+      const canPush = cloudSubsReady && this.currentUserProfile && this.currentUserProfile.isAdmin;
+      if (!this._repairedResolutionIds) this._repairedResolutionIds = new Set();
+
+      Object.keys(this.resolutions).forEach(studentId => {
+        const res = this.resolutions[studentId];
+        if (!res || !res.tema) return;
+        const currentCount = Object.keys(res.answers || {}).filter(k => res.answers[k]).length;
+        if (currentCount >= totalQuestions) return;
+
+        const answers = this.buildCompleteResolutionAnswers(studentId, res.tema, res.answers);
+        if (Object.keys(answers).length <= currentCount) return;
+
+        const calc = this.calculateScore(res.tema, answers);
+        const repaired = {
+          ...res,
+          answers,
+          scoreMath: calc.scoreMath,
+          scoreLang: calc.scoreLang,
+          scoreTotal: calc.scoreTotal,
+          correctCount: calc.correctCount,
+          repairedAt: new Date().toISOString(),
+          repairNotes: `Completadas ${Object.keys(answers).length - currentCount} respuestas coincidentes de los preceptores (nota previa: ${res.scoreTotal})`
+        };
+        this.resolutions[studentId] = repaired;
+
+        if (canPush && !this._repairedResolutionIds.has(studentId)) {
+          this._repairedResolutionIds.add(studentId);
+          console.info(`[Resoluciones] Reparada ${studentId}: ${res.scoreTotal} -> ${calc.scoreTotal}`);
+          window.FirebaseSyncService.pushResolution(studentId, repaired);
+        }
+      });
+    }
+
+    setInstanceOverridesFromCloud(overrides) {
+      this.instanceOverrides = overrides || {};
       this.notify();
     }
 
@@ -173,7 +262,13 @@
 
     // --- CÁLCULO DE CALIFICACIÓN ---
 
-    calculateScore(tema, answers) {
+    // Clave vigente o, con { claveAnterior: true }, la clave previa a la corrección de P14 (Tema A) y P16 (Tema B)
+    getAnswerKey(q, tema, claveAnterior = false) {
+      if (tema === 'B') return (claveAnterior && q.temaB_anterior) ? q.temaB_anterior : q.temaB;
+      return (claveAnterior && q.temaA_anterior) ? q.temaA_anterior : q.temaA;
+    }
+
+    calculateScore(tema, answers, { claveAnterior = false } = {}) {
       if (!window.EXAM_CONFIG || !window.EXAM_CONFIG.questions) {
         return { scoreMath: 0, scoreLang: 0, scoreTotal: 0, correctCount: 0, details: [] };
       }
@@ -207,7 +302,7 @@
       const details = [];
 
       questions.forEach(q => {
-        const key = (tema === 'B') ? q.temaB : q.temaA;
+        const key = this.getAnswerKey(q, tema, claveAnterior);
         const studentAns = (answers[q.n] || '').trim().toUpperCase();
         const isCorrect = studentAns === key;
         const points = isCorrect ? (window.EXAM_CONFIG.pointsPerQuestion || 0.5) : 0;
@@ -318,11 +413,12 @@
     // --- RESOLUCIÓN MANUAL POR PARTE DEL DIRECTOR ---
 
     async resolveDiscrepancy(studentId, officialData) {
-      const calc = this.calculateScore(officialData.tema, officialData.answers);
+      const answers = this.buildCompleteResolutionAnswers(studentId, officialData.tema, officialData.answers);
+      const calc = this.calculateScore(officialData.tema, answers);
       const resRecord = {
         studentId,
         tema: officialData.tema,
-        answers: officialData.answers,
+        answers,
         scoreMath: calc.scoreMath,
         scoreLang: calc.scoreLang,
         scoreTotal: calc.scoreTotal,
@@ -501,6 +597,10 @@
           answers = audit.officialAnswers;
         }
 
+        const finalScoreAnterior = (finalScore !== null && tema)
+          ? this.calculateScore(tema, answers || {}, { claveAnterior: true }).scoreTotal
+          : null;
+
         return {
           student,
           audit,
@@ -509,9 +609,111 @@
           finalLang,
           tema,
           answers,
-          isPassed: finalScore !== null ? finalScore >= 6.0 : null
+          finalScoreAnterior,
+          ...this.getInstanceCondition(student, finalScore)
         };
       });
+    }
+
+    // --- CONDICIÓN: PASA / NO PASA A LA PRÓXIMA INSTANCIA ---
+
+    getPassThreshold() {
+      return (window.EXAM_CONFIG && typeof window.EXAM_CONFIG.passThreshold === 'number') ? window.EXAM_CONFIG.passThreshold : 5.0;
+    }
+
+    // Prioridad: decisión de Dirección en Firestore > nota final de 5 o más > lista de Dirección en la configuración
+    getInstanceCondition(student, finalScore) {
+      const override = this.instanceOverrides[student.id];
+      if (override && typeof override.pasa === 'boolean') {
+        return { pasa: override.pasa, isPassed: override.pasa, pasaOrigen: 'direccion' };
+      }
+      const hasScore = finalScore !== null && finalScore !== undefined;
+      if (hasScore && finalScore >= this.getPassThreshold()) {
+        return { pasa: true, isPassed: true, pasaOrigen: 'nota' };
+      }
+      const cleanDni = String(student.dni).replace(/\D/g, '');
+      const listaDireccion = (window.EXAM_CONFIG && window.EXAM_CONFIG.pasaPorDireccionDni) || [];
+      if (listaDireccion.includes(cleanDni)) {
+        return { pasa: true, isPassed: true, pasaOrigen: 'lista_direccion' };
+      }
+      if (hasScore) {
+        return { pasa: false, isPassed: false, pasaOrigen: 'nota' };
+      }
+      // Sin nota final: ausente no pasa; presente queda pendiente (sin cargar o con discrepancia sin resolver)
+      if (!student.asistio) return { pasa: false, isPassed: false, pasaOrigen: 'ausente' };
+      return { pasa: null, isPassed: null, pasaOrigen: 'pendiente' };
+    }
+
+    // pasa: true / false fija la condición; null vuelve al cálculo automático por nota
+    async setInstanceOverride(studentId, pasa) {
+      if (!this.currentUserProfile || !this.currentUserProfile.isAdmin) {
+        throw new Error('Solo Dirección puede cambiar la condición de un estudiante.');
+      }
+      const record = (pasa === null) ? null : {
+        studentId,
+        pasa,
+        updatedBy: this.currentUserProfile.name,
+        updatedByUid: this.currentUserProfile.uid,
+        updatedAt: new Date().toISOString()
+      };
+      if (record) this.instanceOverrides[studentId] = record;
+      else delete this.instanceOverrides[studentId];
+      this.notify();
+      await window.FirebaseSyncService.pushInstanceOverride(studentId, record);
+
+      // Mantener al día el resultado publicado para el estudiante
+      const item = this.getConsolidatedResults().find(c => c.student.id === studentId);
+      if (item) await window.FirebaseSyncService.publishStudentResults([this.buildStudentPublicResult(item)]);
+    }
+
+    // Documento público que ve el estudiante al ingresar con su DNI.
+    // No incluye quién corrigió, cuántas cargas hubo ni la clave de respuestas.
+    buildStudentPublicResult(item) {
+      const s = item.student;
+      const questions = (window.EXAM_CONFIG && window.EXAM_CONFIG.questions) || [];
+      let estado = 'evaluado';
+      if (item.finalScore === null) estado = s.asistio ? 'pendiente' : 'ausente';
+
+      const doc = {
+        dni: String(s.dni).replace(/\D/g, ''),
+        apellido: s.apellido,
+        nombre: s.nombre,
+        aula: s.aula,
+        estado,
+        tema: estado === 'evaluado' ? item.tema : null,
+        notaMatematica: estado === 'evaluado' ? item.finalMath : null,
+        notaLengua: estado === 'evaluado' ? item.finalLang : null,
+        notaFinal: estado === 'evaluado' ? item.finalScore : null,
+        pasa: item.pasa,
+        cronograma: this.getNextInstanceSchedule(s),
+        preguntas: [],
+        publicadoEn: new Date().toISOString()
+      };
+
+      if (estado === 'evaluado') {
+        const calc = this.calculateScore(item.tema, item.answers || {});
+        doc.preguntas = calc.details.map(d => ({
+          n: d.n,
+          materia: d.subject,
+          contenido: d.topic,
+          respuesta: d.answered || '-',
+          correcta: d.isCorrect
+        }));
+      }
+      return doc;
+    }
+
+    // Cronograma de la próxima instancia: 'alternativo' para los DNI indicados por Dirección, 'general' para el resto
+    getNextInstanceSchedule(student) {
+      const cleanDni = String(student.dni).replace(/\D/g, '');
+      const alternativos = (window.EXAM_CONFIG && window.EXAM_CONFIG.cronogramaAlternativoDni) || [];
+      return alternativos.includes(cleanDni) ? 'alternativo' : 'general';
+    }
+
+    async publishAllStudentResults() {
+      const docs = this.getConsolidatedResults().map(item => this.buildStudentPublicResult(item));
+      await window.FirebaseSyncService.publishStudentResults(docs);
+      return docs.length;
     }
 
     // --- MONITOREO DE PROGRESO DE PRECEPTORES (REPARTICIÓN POR CANTIDAD) ---

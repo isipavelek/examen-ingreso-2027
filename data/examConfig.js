@@ -3,6 +3,9 @@ window.EXAM_CONFIG = {
   "title": "EXAMEN DE INGRESO A 1.ER AÑO – CICLO LECTIVO 2027",
   "maxScore": 10.0,
   "pointsPerQuestion": 0.5,
+  "passThreshold": 5.0,
+  "cronogramaAlternativoDni": ["54675212", "54292537", "54424756", "54658408", "54297704", "54812955", "54227624", "54286986", "54529840", "54809822"],
+  "pasaPorDireccionDni": ["54675212", "54292537", "54424756", "54658408", "54297704", "54812955", "54227624", "54286986", "54529840", "54809822", "54424802", "54727317", "54273014", "54666387", "54420732", "54593004", "54416079"],
   "totalQuestions": 20,
   "mathQuestions": 10,
   "langQuestions": 10,
@@ -114,7 +117,8 @@ window.EXAM_CONFIG = {
     {
       "n": 14,
       "subject": "Prácticas del Lenguaje",
-      "temaA": "B",
+      "temaA": "D",
+      "temaA_anterior": "B",
       "temaB": "A",
       "topic": "Puntuación y vocativo",
       "criterion": "Puntuación: delimitación de vocativo e interlocutor."
@@ -131,7 +135,8 @@ window.EXAM_CONFIG = {
       "n": 16,
       "subject": "Prácticas del Lenguaje",
       "temaA": "C",
-      "temaB": "B",
+      "temaB": "C",
+      "temaB_anterior": "B",
       "topic": "Aposición",
       "criterion": "Puntuación: delimitación de aposición / conector explicativo."
     },
