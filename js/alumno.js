@@ -75,15 +75,15 @@
 
   function renderResult(r) {
     $('resName').textContent = `${r.apellido}, ${r.nombre}`;
-    $('resMeta').textContent = `DNI ${r.dni} • Aula ${r.aula}${r.tema ? ` • Tema ${r.tema}` : ''}`;
+    $('resMeta').textContent = `DNI ${r.dni}${r.tema ? ` • Tema ${r.tema}` : ''}`;
 
     let summary = '';
     if (r.estado === 'evaluado') {
       summary = `
         <div class="score-grid">
-          <div class="score-box"><div class="lbl">Matemática</div><div class="val">${fmt(r.notaMatematica)} <small style="font-size: 0.9rem; color: var(--text-muted);">/ 5</small></div></div>
-          <div class="score-box"><div class="lbl">Prácticas del Lenguaje</div><div class="val">${fmt(r.notaLengua)} <small style="font-size: 0.9rem; color: var(--text-muted);">/ 5</small></div></div>
-          <div class="score-box"><div class="lbl">Nota final</div><div class="val">${fmt(r.notaFinal)} <small style="font-size: 0.9rem; color: var(--text-muted);">/ 10</small></div></div>
+          <div class="score-box final"><div class="lbl">Nota final</div><div class="val">${fmt(r.notaFinal)} <span class="of">/ 10</span></div></div>
+          <div class="score-box"><div class="lbl">Matemática</div><div class="val">${fmt(r.notaMatematica)} <span class="of">/ 5</span></div></div>
+          <div class="score-box"><div class="lbl">Prácticas del Lenguaje</div><div class="val">${fmt(r.notaLengua)} <span class="of">/ 5</span></div></div>
         </div>`;
     } else if (r.estado === 'ausente') {
       summary = '<p class="result-meta" style="margin-top: 1rem;">No hay un examen registrado para este estudiante (ausente).</p>';
@@ -94,14 +94,21 @@
 
     const preguntas = Array.isArray(r.preguntas) ? r.preguntas : [];
     if (r.estado === 'evaluado' && preguntas.length > 0) {
-      $('resAnswersBody').innerHTML = preguntas.map(p => `
-        <tr>
-          <td class="c"><strong>${escapeHtml(p.n)}</strong></td>
-          <td class="hide-sm">${escapeHtml(p.materia)}</td>
-          <td>${escapeHtml(p.contenido)}</td>
-          <td class="c"><strong>${escapeHtml(p.respuesta || '-')}</strong></td>
-          <td class="c">${p.correcta ? '<span class="ok">✔ Bien</span>' : '<span class="bad">✘ Mal</span>'}</td>
-        </tr>`).join('');
+      // Agrupadas por materia, en filas compactas que se leen bien en el celular
+      const materias = [];
+      preguntas.forEach(p => { if (!materias.includes(p.materia)) materias.push(p.materia); });
+      $('resAnswersBody').innerHTML = materias.map(materia => `
+        <div class="subject-title">${escapeHtml(materia)}</div>
+        ${preguntas.filter(p => p.materia === materia).map(p => `
+          <div class="answer-row">
+            <div class="answer-n">${escapeHtml(p.n)}</div>
+            <div class="answer-topic">${escapeHtml(p.contenido)}
+              <span class="answer-given">Tu respuesta: <strong>${escapeHtml(p.respuesta || '-')}</strong></span>
+            </div>
+            ${p.correcta ? '<span class="answer-result ok">✔ Bien</span>' : '<span class="answer-result bad">✘ Mal</span>'}
+          </div>`).join('')}`).join('');
+      const bien = preguntas.filter(p => p.correcta).length;
+      $('resAnswersSummary').textContent = `${bien} de ${preguntas.length} respuestas bien`;
       $('resAnswersCard').style.display = '';
     } else {
       $('resAnswersBody').innerHTML = '';

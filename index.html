@@ -4,46 +4,64 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Resultado del Examen de Ingreso 2027 • EST UTN San Miguel</title>
-  <link rel="stylesheet" href="css/styles.css?v=2027.7">
+  <link rel="stylesheet" href="css/styles.css?v=2027.10">
 
   <!-- Solo Firestore: el portal del estudiante no usa el padrón ni las cargas de los preceptores -->
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
   <style>
-    body { background: var(--bg-primary); color: var(--text-main); min-height: 100vh; }
-    .student-wrap { max-width: 860px; margin: 0 auto; padding: 2rem 1rem 3rem; }
-    .student-header { text-align: center; margin-bottom: 1.5rem; }
-    .student-header h1 { font-size: 1.35rem; margin: 0.5rem 0 0.25rem; }
+    body { background: var(--bg-primary); color: var(--text-main); min-height: 100vh; -webkit-text-size-adjust: 100%; }
+    .student-wrap { max-width: 760px; margin: 0 auto; padding: 1.75rem 1rem 3rem; }
+    .student-header { text-align: center; margin-bottom: 1.25rem; }
+    .student-header h1 { font-size: 1.3rem; margin: 0.25rem 0 0.2rem; }
     .student-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1rem; }
     .dni-form { display: flex; flex-direction: column; gap: 0.75rem; max-width: 380px; margin: 0 auto; }
-    .dni-input { font-size: 1.4rem; text-align: center; letter-spacing: 0.1em; }
-    .result-top { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; }
-    .result-name { font-size: 1.3rem; font-weight: 700; }
+    .dni-input { font-size: 1.5rem; text-align: center; letter-spacing: 0.08em; min-height: 54px; }
+    .btn-big { min-height: 50px; font-size: 1rem; }
+    .result-top { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: center; justify-content: space-between; }
+    .result-name { font-size: 1.3rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
     .result-meta { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem; }
-    .score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-top: 1.25rem; }
-    .score-box { background: var(--bg-elevated); border-radius: var(--radius-md); padding: 0.9rem; text-align: center; }
-    .score-box .lbl { color: var(--text-muted); font-size: 0.8rem; }
+    .score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 1.25rem; }
+    .score-box { background: var(--bg-elevated); border-radius: var(--radius-md); padding: 0.85rem 0.6rem; text-align: center; }
+    .score-box.final { grid-column: 1 / -1; }
+    .score-box .lbl { color: var(--text-muted); font-size: 0.8rem; line-height: 1.2; }
     .score-box .val { font-size: 1.6rem; font-weight: 800; margin-top: 0.2rem; }
-    .condition-banner { margin-top: 1.25rem; padding: 1rem; border-radius: var(--radius-md); text-align: center; font-size: 1.15rem; font-weight: 700; }
+    .score-box.final .val { font-size: 2.4rem; }
+    .score-box .of { font-size: 0.9rem; color: var(--text-muted); font-weight: 600; }
+    .condition-banner { margin-top: 1rem; padding: 1rem; border-radius: var(--radius-md); text-align: center; font-size: 1.1rem; font-weight: 700; line-height: 1.3; }
     .condition-pasa { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
     .condition-no-pasa { background: rgba(239, 68, 68, 0.12); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
     .condition-pendiente { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
-    .answers-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    .answers-table th, .answers-table td { padding: 0.55rem 0.5rem; border-bottom: 1px solid var(--border-subtle); text-align: left; }
-    .answers-table th { color: var(--text-muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
-    .answers-table .c { text-align: center; }
-    .ok { color: #34d399; font-weight: 700; }
-    .bad { color: #f87171; font-weight: 700; }
-    .section-title { font-size: 1rem; font-weight: 700; margin: 0 0 0.75rem; }
+    .section-title { font-size: 1.05rem; font-weight: 700; margin: 0 0 0.25rem; }
+    .answers-summary { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 0.25rem; }
+    .subject-title { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-accent); margin: 1rem 0 0.35rem; }
+    .answer-row { display: grid; grid-template-columns: 2rem 1fr auto; gap: 0.6rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--border-subtle); }
+    .answer-n { font-weight: 800; color: var(--text-muted); text-align: center; }
+    .answer-topic { font-size: 0.9rem; line-height: 1.3; overflow-wrap: anywhere; }
+    .answer-given { display: block; font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem; }
+    .answer-given strong { color: var(--text-main); }
+    .answer-result { font-size: 0.82rem; font-weight: 700; padding: 0.25rem 0.6rem; border-radius: var(--radius-full); white-space: nowrap; }
+    .answer-result.ok { color: #34d399; background: rgba(16, 185, 129, 0.15); }
+    .answer-result.bad { color: #f87171; background: rgba(239, 68, 68, 0.12); }
     .schedule-card { margin-top: 1rem; padding: 1rem 1.1rem; border-radius: var(--radius-md); background: var(--bg-elevated); border: 1px solid rgba(16, 185, 129, 0.35); }
-    .schedule-item { margin-top: 0.75rem; }
+    .schedule-item { margin-top: 0.85rem; }
     .schedule-title { font-weight: 700; font-size: 1rem; margin-bottom: 0.35rem; }
-    .schedule-item ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.92rem; }
-    .msg-error { color: #f87171; text-align: center; min-height: 1.2em; }
-    @media (max-width: 560px) {
-      .answers-table .hide-sm { display: none; }
-      .student-card { padding: 1rem; }
+    .schedule-item ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.93rem; line-height: 1.4; }
+    .msg-error { color: #f87171; text-align: center; min-height: 1.2em; line-height: 1.35; }
+    @media (min-width: 600px) {
+      .score-grid { grid-template-columns: 1fr 1fr 1fr; }
+      .score-box.final { grid-column: auto; order: 3; }
+      .score-box.final .val { font-size: 1.9rem; }
+    }
+    @media (max-width: 480px) {
+      .student-wrap { padding: 1rem 0.75rem 2rem; }
+      .student-card { padding: 1rem; border-radius: var(--radius-md); }
+      .student-header h1 { font-size: 1.15rem; }
+      .auth-subtitle { font-size: 0.85rem; }
+      .result-top > div { width: 100%; }
+      .result-top .btn { width: 100%; min-height: 46px; }
+      .condition-banner { font-size: 1rem; }
     }
   </style>
 </head>
@@ -60,7 +78,7 @@
       <form id="dniLoginForm" class="dni-form">
         <label for="dniInput" class="form-label-auth" style="text-align: center;">Ingresá el DNI del estudiante (solo números):</label>
         <input type="text" id="dniInput" class="form-control-auth dni-input" inputmode="numeric" autocomplete="off" placeholder="Ej: 54123456" maxlength="10" required>
-        <button type="submit" id="btnDniSubmit" class="btn btn-primary w-100 py-2">Ver mi resultado</button>
+        <button type="submit" id="btnDniSubmit" class="btn btn-primary btn-big w-100">Ver mi resultado</button>
         <div id="dniError" class="msg-error"></div>
       </form>
     </section>
@@ -80,24 +98,12 @@
 
       <div class="student-card" id="resAnswersCard" style="display: none;">
         <h2 class="section-title">Tus respuestas</h2>
-        <div style="overflow-x: auto;">
-          <table class="answers-table">
-            <thead>
-              <tr>
-                <th class="c">N°</th>
-                <th class="hide-sm">Materia</th>
-                <th>Contenido</th>
-                <th class="c">Tu respuesta</th>
-                <th class="c">Resultado</th>
-              </tr>
-            </thead>
-            <tbody id="resAnswersBody"></tbody>
-          </table>
-        </div>
+        <div class="answers-summary" id="resAnswersSummary"></div>
+        <div id="resAnswersBody"></div>
       </div>
     </section>
   </div>
 
-  <script src="js/alumno.js?v=2027.9"></script>
+  <script src="js/alumno.js?v=2027.10"></script>
 </body>
 </html>

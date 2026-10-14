@@ -678,7 +678,6 @@
         dni: String(s.dni).replace(/\D/g, ''),
         apellido: s.apellido,
         nombre: s.nombre,
-        aula: s.aula,
         estado,
         tema: estado === 'evaluado' ? item.tema : null,
         notaMatematica: estado === 'evaluado' ? item.finalMath : null,
