@@ -16,6 +16,7 @@
       this.submissions = localSubs.map(s => this.rescoreWithCurrentKey(s));
       this.resolutions = {}; // studentId -> resolution object
       this.instanceOverrides = {}; // studentId -> { pasa, updatedBy, updatedAt } definido por Dirección
+      this.encuentroAttendance = {}; // `${encuentroId}_${studentId}` -> { presente, updatedBy, updatedAt }
       this.currentUserProfile = null;
       this.listeners = new Set();
       this.init();
@@ -56,6 +57,15 @@
 
     isAdmin() {
       return this.currentUserProfile && (this.currentUserProfile.isAdmin === true);
+    }
+
+    // Con la carga cerrada, solo Dirección y Vicedirección pueden cargar o modificar exámenes
+    isCargaCerrada() {
+      return !!(window.EXAM_CONFIG && window.EXAM_CONFIG.cargaMultipleChoiceCerrada);
+    }
+
+    canLoadExams() {
+      return !this.isCargaCerrada() || this.isAdmin();
     }
 
     // Cantidad real de exámenes rendidos (hojas físicas a corregir)
@@ -350,6 +360,7 @@
 
       const userProfile = this.currentUserProfile;
       if (!userProfile) throw new Error('No hay usuario autenticado en Firebase');
+      if (!this.canLoadExams()) throw new Error('La carga del examen multiple choice está cerrada.');
 
       const targetUid = overridePreceptorUid || userProfile.uid;
       const targetName = overridePreceptorName || userProfile.name;
@@ -434,6 +445,7 @@
     }
 
     async deleteSubmission(studentId, preceptorUid) {
+      if (!this.canLoadExams()) throw new Error('La carga del examen multiple choice está cerrada.');
       const res = await window.FirebaseSyncService.deleteSubmission(studentId, preceptorUid);
       this.submissions = this.submissions.filter(s => !(s.studentId === studentId && s.preceptorUid === preceptorUid));
       this.notify();
@@ -707,6 +719,80 @@
       const cleanDni = String(student.dni).replace(/\D/g, '');
       const alternativos = (window.EXAM_CONFIG && window.EXAM_CONFIG.cronogramaAlternativoDni) || [];
       return alternativos.includes(cleanDni) ? 'alternativo' : 'general';
+    }
+
+    // --- ASISTENCIA A LOS ENCUENTROS DE LA PRÓXIMA INSTANCIA ---
+
+    getEncuentros() {
+      return (window.EXAM_CONFIG && window.EXAM_CONFIG.encuentros) || [];
+    }
+
+    getEncuentroById(encuentroId) {
+      return this.getEncuentros().find(e => e.id === encuentroId) || null;
+    }
+
+    // Encuentro de hoy o el próximo; si ya pasaron todos, el último
+    getDefaultEncuentroId() {
+      const encuentros = this.getEncuentros();
+      if (encuentros.length === 0) return null;
+      const d = new Date();
+      const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const proximo = encuentros.find(e => e.fecha >= hoy);
+      return (proximo || encuentros[encuentros.length - 1]).id;
+    }
+
+    // Estudiantes convocados: los que pasan y les corresponde ese encuentro según su cronograma
+    getEncuentroStudents(encuentroId) {
+      const encuentro = this.getEncuentroById(encuentroId);
+      if (!encuentro) return [];
+      return this.getConsolidatedResults()
+        .filter(item => item.pasa === true)
+        .map(item => item.student)
+        .filter(s => encuentro.cronograma === 'todos' || this.getNextInstanceSchedule(s) === encuentro.cronograma);
+    }
+
+    setEncuentroAttendanceFromCloud(attendMap) {
+      this.encuentroAttendance = attendMap || {};
+      this.notify();
+    }
+
+    getEncuentroAttendance(encuentroId, studentId) {
+      return this.encuentroAttendance[`${encuentroId}_${studentId}`] || null;
+    }
+
+    // presente: true / false registra la asistencia; null borra el registro (vuelve a "sin tomar")
+    async setEncuentroAttendance(encuentroId, studentId, presente) {
+      const student = this.getStudentById(studentId);
+      if (!student || !this.getEncuentroById(encuentroId)) throw new Error('Estudiante o encuentro inexistente.');
+      if (!this.currentUserProfile) throw new Error('No hay usuario autenticado en Firebase');
+
+      const docId = `${encuentroId}_${studentId}`;
+      const previous = this.encuentroAttendance[docId];
+      const record = (presente === null) ? null : {
+        encuentroId,
+        studentId,
+        dni: String(student.dni).replace(/\D/g, ''),
+        studentName: `${student.apellido}, ${student.nombre}`,
+        presente: !!presente,
+        updatedBy: this.currentUserProfile.name,
+        updatedByUid: this.currentUserProfile.uid,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (record) this.encuentroAttendance[docId] = record;
+      else delete this.encuentroAttendance[docId];
+      this.notify();
+
+      try {
+        await window.FirebaseSyncService.pushEncuentroAttendance(docId, record);
+      } catch (err) {
+        // Revertir para que la pantalla no muestre algo que no quedó registrado
+        if (previous) this.encuentroAttendance[docId] = previous;
+        else delete this.encuentroAttendance[docId];
+        this.notify();
+        throw err;
+      }
+      return record;
     }
 
     async publishAllStudentResults() {

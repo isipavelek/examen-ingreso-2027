@@ -4,6 +4,14 @@ window.EXAM_CONFIG = {
   "maxScore": 10.0,
   "pointsPerQuestion": 0.5,
   "passThreshold": 5.0,
+  // Carga del examen multiple choice cerrada: los preceptores ya no pueden cargar ni modificar (Dirección sí)
+  "cargaMultipleChoiceCerrada": true,
+  // Encuentros de la próxima instancia: 'general' / 'alternativo' según cronograma, 'todos' = todos los que pasan
+  "encuentros": [
+    { "id": "pdl_16_10", "nombre": "Prácticas del Lenguaje", "fecha": "2026-10-16", "fechaCorta": "Vie 16/10", "hoja": "PdL 16-10", "cronograma": "general" },
+    { "id": "mat_23_10", "nombre": "Matemática", "fecha": "2026-10-23", "fechaCorta": "Vie 23/10", "hoja": "Matemática 23-10", "cronograma": "todos" },
+    { "id": "pdl_30_10", "nombre": "Prácticas del Lenguaje", "fecha": "2026-10-30", "fechaCorta": "Vie 30/10", "hoja": "PdL 30-10", "cronograma": "alternativo" }
+  ],
   "cronogramaAlternativoDni": ["54675212", "54292537", "54424756", "54658408", "54297704", "54812955", "54227624", "54286986", "54529840", "54809822"],
   "pasaPorDireccionDni": ["54675212", "54292537", "54424756", "54658408", "54297704", "54812955", "54227624", "54286986", "54529840", "54809822", "54424802", "54727317", "54273014", "54666387", "54420732", "54593004", "54416079"],
   "totalQuestions": 20,

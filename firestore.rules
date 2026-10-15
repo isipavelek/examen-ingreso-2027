@@ -24,10 +24,19 @@ service cloud.firestore {
       ]);
     }
 
-    // Datos internos: solo personal autenticado (los estudiantes no pueden ver cargas ni correctores)
-    match /exam_submissions/{id}     { allow read, write: if isStaff(); }
-    match /deleted_submissions/{id}  { allow read, write: if isStaff(); }
-    match /students_attendance/{id}  { allow read, write: if isStaff(); }
+    // Datos internos: solo personal autenticado (los estudiantes no pueden ver cargas ni correctores).
+    // La carga del multiple choice está cerrada: los preceptores solo leen, Dirección puede corregir.
+    match /exam_submissions/{id}     { allow read: if isStaff(); allow write: if isDireccion(); }
+    match /deleted_submissions/{id}  { allow read: if isStaff(); allow write: if isDireccion(); }
+    match /students_attendance/{id}  { allow read: if isStaff(); allow write: if isDireccion(); }
+
+    // Toma de lista de los encuentros de la próxima instancia (todo el personal)
+    match /instance_attendance/{id} {
+      allow read, delete: if isStaff();
+      allow create, update: if isStaff()
+        && request.resource.data.presente is bool
+        && request.resource.data.updatedByUid == request.auth.uid;
+    }
     match /exam_resolutions/{id}     { allow read: if isStaff(); allow write: if isDireccion(); }
     match /instance_overrides/{id}   { allow read: if isStaff(); allow write: if isDireccion(); }
 

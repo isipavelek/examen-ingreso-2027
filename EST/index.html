@@ -7,7 +7,7 @@
   <meta name="description" content="Sistema de evaluación, doble carga cruzada, analíticas y gestión del examen de ingreso a 1.er año 2027 de la Escuela Secundaria Técnica UTN San Miguel.">
 
   <!-- Hojas de estilo y tipografías -->
-  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="../css/styles.css?v=2027.11">
 
   <!-- Firebase SDK Compat Oficial -->
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -110,6 +110,9 @@
 
     <!-- Pestañas de Navegación Dinámicas por Rol -->
     <nav class="nav-tabs-wrapper" aria-label="Navegación principal">
+      <button class="nav-tab-btn" data-tab="asistencia" id="navBtnAsistencia">
+        <span>🗓️</span> Asistencia Encuentros
+      </button>
       <button class="nav-tab-btn active" data-tab="carga" id="navBtnCarga">
         <span>✏️</span> Carga Ágil
       </button>
@@ -155,6 +158,62 @@
       </div>
     </div>
   </header>
+
+  <!-- ==========================================================================
+       SECCIÓN: TOMA DE LISTA DE LOS ENCUENTROS DE LA PRÓXIMA INSTANCIA
+       ========================================================================== -->
+  <main id="view-asistencia" class="view-section">
+    <div class="audit-toolbar">
+      <div>
+        <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.25rem;">🗓️ Toma de Lista &bull; Próxima Instancia</h2>
+        <small class="text-muted">Elegí el encuentro, buscá al estudiante y marcalo Presente o Ausente. Queda registrado al instante.</small>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.exportEncuentroAttendance()" title="Excel con una hoja por encuentro">
+        📥 Descargar asistencia (Excel)
+      </button>
+    </div>
+
+    <!-- Selector de encuentro -->
+    <div id="encuentroSelector" class="encuentro-selector">
+      <!-- Inyectado por JavaScript -->
+    </div>
+
+    <!-- Resumen del encuentro elegido (clic para filtrar) -->
+    <div class="audit-quick-chips">
+      <button type="button" class="quick-chip-btn active" data-asist-filter="all" onclick="window.app.setAsistenciaFilter('all')">
+        👥 Convocados (<span id="asistCountTotal">0</span>)
+      </button>
+      <button type="button" class="quick-chip-btn chip-warning" data-asist-filter="sin_tomar" onclick="window.app.setAsistenciaFilter('sin_tomar')">
+        ⏳ Sin tomar (<span id="asistCountPending">0</span>)
+      </button>
+      <button type="button" class="quick-chip-btn chip-success" data-asist-filter="presente" onclick="window.app.setAsistenciaFilter('presente')">
+        ✅ Presentes (<span id="asistCountPresent">0</span>)
+      </button>
+      <button type="button" class="quick-chip-btn chip-danger" data-asist-filter="ausente" onclick="window.app.setAsistenciaFilter('ausente')">
+        ❌ Ausentes (<span id="asistCountAbsent">0</span>)
+      </button>
+    </div>
+
+    <div class="asistencia-search-row">
+      <div class="search-input-wrapper">
+        <span class="search-icon">🔍</span>
+        <input type="search" id="asistenciaSearchInput" class="form-control-search asistencia-search-input"
+          placeholder="Buscar por apellido, nombre o DNI..." autocomplete="off"
+          oninput="window.app.renderAsistenciaView()" onkeydown="window.app.handleAsistenciaSearchKey(event)">
+      </div>
+      <label class="asistencia-toggle" title="Mostrar también a quienes no figuran en la lista de este encuentro">
+        <input type="checkbox" id="asistenciaIncludeAll" onchange="window.app.renderAsistenciaView()">
+        Buscar en todo el padrón
+      </label>
+    </div>
+    <small class="asistencia-hint">
+      Atajo: si la búsqueda deja un solo estudiante, <span class="key-badge">Enter</span> lo marca Presente y limpia el buscador.
+    </small>
+
+    <div id="asistenciaList" class="asistencia-list">
+      <!-- Inyectado por JavaScript -->
+    </div>
+  </main>
 
   <!-- ==========================================================================
        SECCIÓN 1: VISTA DE CARGA ÁGIL DE EXÁMENES
@@ -1088,12 +1147,12 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <!-- Carga de Datos y Scripts de la Aplicación -->
-  <script src="../data/examConfig.js?v=2027.9"></script>
+  <script src="../data/examConfig.js?v=2027.10"></script>
   <script src="../data/students.js?v=2027.4"></script>
-  <script src="../js/firebase-sync.js?v=2027.7"></script>
-  <script src="../js/data-service.js?v=2027.10"></script>
+  <script src="../js/firebase-sync.js?v=2027.8"></script>
+  <script src="../js/data-service.js?v=2027.11"></script>
   <script src="../js/analytics.js?v=2027.7"></script>
   <script src="../js/audit.js?v=2027.4"></script>
-  <script src="../js/app.js?v=2027.9"></script>
+  <script src="../js/app.js?v=2027.10"></script>
 </body>
 </html>

@@ -51,6 +51,25 @@ Para corroborar la corrección humana sin sobrecargar al equipo:
 
 ---
 
+## 🔒 Cierre de la Carga del Multiple Choice
+
+Con `cargaMultipleChoiceCerrada: true` en `data/examConfig.js` los preceptores ya no ven **Carga Ágil** ni **Mi Progreso** y no pueden guardar, anular ni subir cargas. Dirección y Vicedirección conservan el acceso para corregir. Las reglas de `firestore.rules` acompañan el cierre: solo Dirección escribe en `exam_submissions`, `deleted_submissions` y `students_attendance`.
+
+---
+
+## 🗓️ Toma de Lista de los Encuentros (Próxima Instancia)
+
+Pestaña **Asistencia Encuentros**, disponible para preceptores, Dirección y Vicedirección:
+
+- Tres encuentros definidos en `encuentros` de `data/examConfig.js`: PdL 16/10 (cronograma general), Matemática 23/10 (todos los que pasan) y PdL 30/10 (cronograma alternativo). Por defecto se abre el encuentro de hoy o el próximo.
+- La lista son los estudiantes que **pasan** y les corresponde ese encuentro. Con *Buscar en todo el padrón* se puede registrar a alguien que no figura en la lista.
+- Búsqueda por apellido, nombre (sin importar tildes) o DNI. Si queda un solo resultado, `Enter` lo marca **Presente** y limpia el buscador.
+- Tocar de nuevo el estado marcado lo desmarca (vuelve a *Sin tomar*).
+- Cada registro queda en Firestore (`instance_attendance/{encuentro}_{estudiante}`) con quién lo marcó y a qué hora, y se ve al instante en todas las PCs y celulares.
+- **Descargar asistencia (Excel)**: una hoja por encuentro.
+
+---
+
 ## ☁️ Conexión con Firebase Firestore
 
 - **Proyecto:** `exingutn2027`

@@ -293,7 +293,7 @@
     // --- LISTENERS EN TIEMPO REAL FIRESTORE ---
 
     teardownFirestoreListeners() {
-      ['unsubscribeSubmissions', 'unsubscribeResolutions', 'unsubscribeAttendance', 'unsubscribeInstanceOverrides', 'unsubscribeDeleted']
+      ['unsubscribeSubmissions', 'unsubscribeResolutions', 'unsubscribeAttendance', 'unsubscribeInstanceOverrides', 'unsubscribeEncuentroAttendance', 'unsubscribeDeleted']
         .forEach(key => {
           if (typeof this[key] === 'function') this[key]();
           this[key] = null;
@@ -371,6 +371,16 @@
           });
           window.DataService.setInstanceOverridesFromCloud(overrides);
         }, err => handleFirestoreError(err, 'instance_overrides'));
+
+      // 3c. Escuchar la toma de lista de los encuentros de la próxima instancia
+      this.unsubscribeEncuentroAttendance = this.db.collection('instance_attendance')
+        .onSnapshot(snapshot => {
+          const attendMap = {};
+          snapshot.forEach(doc => {
+            attendMap[doc.id] = doc.data();
+          });
+          window.DataService.setEncuentroAttendanceFromCloud(attendMap);
+        }, err => handleFirestoreError(err, 'instance_attendance'));
 
       // 4. Escuchar anulaciones y eliminaciones de exámenes para propagar entre PCs
       try {
@@ -484,6 +494,8 @@
 
     autoSyncMissingLocalExams() {
       if (this._isSyncing || !this.db || !this.hasReceivedInitialCloudSubmissions) return;
+      // Con la carga cerrada, las PCs de preceptores ya no suben exámenes (las reglas lo rechazarían)
+      if (window.DataService && !window.DataService.canLoadExams()) return;
       try {
         const unsyncedCount = this.getUnsyncedLocalCount();
         const queue = JSON.parse(localStorage.getItem('pending_cloud_sync_queue') || '[]');
@@ -916,6 +928,12 @@
         await this.withTimeout(batch.commit(), 20000);
       }
       return valid.length;
+    }
+
+    async pushEncuentroAttendance(docId, record) {
+      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
+      const ref = this.db.collection('instance_attendance').doc(docId);
+      await this.withTimeout(record ? ref.set(record) : ref.delete(), 7000);
     }
 
     async pushAttendance(studentId, asistio) {

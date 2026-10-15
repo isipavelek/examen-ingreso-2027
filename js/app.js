@@ -15,6 +15,8 @@
       this.searchQuery = '';
       this.selectedAulaFilter = 'all';
       this.selectedScopeFilter = 'assigned'; // 'assigned' | 'all'
+      this.selectedEncuentroId = window.DataService.getDefaultEncuentroId();
+      this.asistenciaFilter = 'all'; // 'all' | 'sin_tomar' | 'presente' | 'ausente'
     }
 
     init() {
@@ -257,8 +259,10 @@
         scopeSelect.disabled = false;
       }
 
-      // Si es preceptor, ir a Carga Ágil
-      if (!profile.isAdmin) {
+      // Con la carga cerrada, todo el personal entra a la toma de lista de los encuentros
+      if (window.DataService.isCargaCerrada()) {
+        this.switchTab('asistencia');
+      } else if (!profile.isAdmin) {
         this.switchTab('carga');
       } else {
         this.switchTab('monitor-preceptores');
@@ -284,6 +288,10 @@
         this.showToast('Acceso restringido: Esta sección es exclusiva de Dirección y Vicedirección.', 'warning');
         return;
       }
+      if (['carga', 'mi-progreso'].includes(tabName) && !window.DataService.canLoadExams()) {
+        this.showToast('La carga del examen multiple choice está cerrada.', 'warning');
+        return;
+      }
 
       this.currentTab = tabName;
 
@@ -295,7 +303,11 @@
         sec.classList.toggle('active', sec.id === `view-${tabName}`);
       });
 
-      if (tabName === 'carga') {
+      if (tabName === 'asistencia') {
+        this.renderAsistenciaView();
+        const search = document.getElementById('asistenciaSearchInput');
+        if (search && window.matchMedia('(pointer: fine)').matches) search.focus();
+      } else if (tabName === 'carga') {
         this.renderStudentSearchList();
         this.renderAnswerSheet();
       } else if (tabName === 'mi-progreso') {
@@ -1193,9 +1205,10 @@
                   📞
                 </a>
               ` : ''}
+              ${window.DataService.canLoadExams() ? `
               <button type="button" class="btn btn-sm btn-primary" onclick="window.app.jumpToGradeStudent('${s.id}')">
                 🚀 Cargar
-              </button>
+              </button>` : ''}
             </td>
           </tr>
         `;
@@ -1412,6 +1425,237 @@
       window.print();
     }
 
+    // --- TOMA DE LISTA DE LOS ENCUENTROS DE LA PRÓXIMA INSTANCIA ---
+
+    normalizeSearchText(text) {
+      return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    }
+
+    sortStudentsAlphabetically(students) {
+      return [...students].sort((a, b) =>
+        a.apellido.localeCompare(b.apellido, 'es', { sensitivity: 'base' }) ||
+        a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+    }
+
+    // Convocados al encuentro más quienes ya tengan asistencia registrada en él aunque no figuren en la lista
+    getEncuentroRoster(encuentroId) {
+      const ds = window.DataService;
+      const convocados = ds.getEncuentroStudents(encuentroId);
+      const convocadosIds = new Set(convocados.map(s => s.id));
+      const extras = ds.getStudents().filter(s => !convocadosIds.has(s.id) && ds.getEncuentroAttendance(encuentroId, s.id));
+      return { convocadosIds, students: this.sortStudentsAlphabetically([...convocados, ...extras]) };
+    }
+
+    getVisibleAsistenciaStudents() {
+      const ds = window.DataService;
+      const encuentroId = this.selectedEncuentroId;
+      const roster = this.getEncuentroRoster(encuentroId);
+      const includeAllEl = document.getElementById('asistenciaIncludeAll');
+      let students = (includeAllEl && includeAllEl.checked)
+        ? this.sortStudentsAlphabetically(ds.getStudents())
+        : roster.students;
+
+      if (this.asistenciaFilter !== 'all') {
+        students = students.filter(s => {
+          const rec = ds.getEncuentroAttendance(encuentroId, s.id);
+          if (this.asistenciaFilter === 'sin_tomar') return !rec;
+          return rec && rec.presente === (this.asistenciaFilter === 'presente');
+        });
+      }
+
+      const searchEl = document.getElementById('asistenciaSearchInput');
+      const q = this.normalizeSearchText(searchEl ? searchEl.value.trim() : '');
+      if (q) {
+        const qDigits = q.replace(/\D/g, '');
+        const terms = q.split(/\s+/);
+        students = students.filter(s => {
+          if (qDigits && qDigits.length === q.replace(/[\s.]/g, '').length) {
+            return String(s.dni).replace(/\D/g, '').includes(qDigits);
+          }
+          const fullName = this.normalizeSearchText(`${s.apellido} ${s.nombre}`);
+          return terms.every(t => fullName.includes(t));
+        });
+      }
+
+      return { students, roster };
+    }
+
+    renderAsistenciaView() {
+      const listEl = document.getElementById('asistenciaList');
+      if (!listEl) return;
+      const ds = window.DataService;
+      const encuentros = ds.getEncuentros();
+      const encuentro = ds.getEncuentroById(this.selectedEncuentroId);
+      if (!encuentro) {
+        listEl.innerHTML = '<div class="asistencia-empty">No hay encuentros configurados.</div>';
+        return;
+      }
+
+      const hoy = new Date();
+      const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+
+      // Selector de encuentros con su avance
+      const selectorEl = document.getElementById('encuentroSelector');
+      if (selectorEl) {
+        selectorEl.innerHTML = encuentros.map(e => {
+          const r = this.getEncuentroRoster(e.id);
+          const taken = r.students.filter(s => ds.getEncuentroAttendance(e.id, s.id)).length;
+          const isToday = e.fecha === hoyStr;
+          return `
+            <button type="button" class="encuentro-card ${e.id === encuentro.id ? 'active' : ''}" onclick="window.app.selectEncuentro('${e.id}')">
+              <span class="encuentro-date">${e.fechaCorta}${isToday ? ' <span class="encuentro-today">HOY</span>' : ''}</span>
+              <span class="encuentro-name">${e.nombre}</span>
+              <span class="encuentro-progress">${taken} / ${r.students.length} tomados</span>
+            </button>`;
+        }).join('');
+      }
+
+      const { students, roster } = this.getVisibleAsistenciaStudents();
+
+      // Contadores del encuentro elegido
+      let present = 0;
+      let absent = 0;
+      roster.students.forEach(s => {
+        const rec = ds.getEncuentroAttendance(encuentro.id, s.id);
+        if (rec && rec.presente) present++;
+        else if (rec) absent++;
+      });
+      const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      setText('asistCountTotal', roster.students.length);
+      setText('asistCountPending', roster.students.length - present - absent);
+      setText('asistCountPresent', present);
+      setText('asistCountAbsent', absent);
+      document.querySelectorAll('[data-asist-filter]').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-asist-filter') === this.asistenciaFilter);
+      });
+
+      if (students.length === 0) {
+        const searchEl = document.getElementById('asistenciaSearchInput');
+        const hasQuery = searchEl && searchEl.value.trim();
+        listEl.innerHTML = `<div class="asistencia-empty">${hasQuery
+          ? 'No se encontró a nadie en la lista de este encuentro. Probá tildar "Buscar en todo el padrón".'
+          : 'No hay estudiantes para este filtro.'}</div>`;
+        return;
+      }
+
+      const formatTime = iso => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        const hhmm = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+        return iso.slice(0, 10) === hoyStr ? hhmm : `${d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })} ${hhmm}`;
+      };
+
+      listEl.innerHTML = students.map(s => {
+        const rec = ds.getEncuentroAttendance(encuentro.id, s.id);
+        const state = rec ? (rec.presente ? 'presente' : 'ausente') : 'sin_tomar';
+        const fueraDeLista = !roster.convocadosIds.has(s.id);
+        const meta = rec
+          ? `${rec.presente ? 'Presente' : 'Ausente'} · ${rec.updatedBy || ''} ${formatTime(rec.updatedAt)}`
+          : 'Sin tomar';
+        return `
+          <div class="asistencia-row state-${state}" data-id="${s.id}">
+            <div class="asistencia-student">
+              <span class="asistencia-name">${s.apellido}, ${s.nombre}</span>
+              <span class="asistencia-meta">
+                DNI ${s.dni}
+                ${fueraDeLista ? '<span class="status-pill pill-warning asistencia-tag">No figura en la lista</span>' : ''}
+              </span>
+              <span class="asistencia-meta asistencia-registro">${meta}</span>
+            </div>
+            <div class="asistencia-actions">
+              <button type="button" class="asist-btn asist-btn-present ${state === 'presente' ? 'active' : ''}"
+                onclick="window.app.markEncuentroAttendance('${s.id}', true)"
+                title="${state === 'presente' ? 'Tocar de nuevo para desmarcar' : 'Marcar presente'}">✅ Presente</button>
+              <button type="button" class="asist-btn asist-btn-absent ${state === 'ausente' ? 'active' : ''}"
+                onclick="window.app.markEncuentroAttendance('${s.id}', false)"
+                title="${state === 'ausente' ? 'Tocar de nuevo para desmarcar' : 'Marcar ausente'}">❌ Ausente</button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    selectEncuentro(encuentroId) {
+      this.selectedEncuentroId = encuentroId;
+      this.renderAsistenciaView();
+    }
+
+    setAsistenciaFilter(filter) {
+      this.asistenciaFilter = filter;
+      this.renderAsistenciaView();
+    }
+
+    // Tocar el estado ya marcado lo desmarca (vuelve a "sin tomar")
+    async markEncuentroAttendance(studentId, presente) {
+      const ds = window.DataService;
+      const encuentroId = this.selectedEncuentroId;
+      const student = ds.getStudentById(studentId);
+      const current = ds.getEncuentroAttendance(encuentroId, studentId);
+      const value = (current && current.presente === presente) ? null : presente;
+      try {
+        await ds.setEncuentroAttendance(encuentroId, studentId, value);
+        const name = student ? `${student.apellido}, ${student.nombre}` : studentId;
+        const label = value === null ? 'desmarcado (sin tomar)' : (value ? 'PRESENTE' : 'AUSENTE');
+        this.showToast(`${name}: ${label}`, value === false ? 'warning' : 'success');
+      } catch (err) {
+        this.showToast(`No se pudo registrar la asistencia: ${err.message}`, 'danger');
+      }
+    }
+
+    // Enter en el buscador: si queda un solo estudiante, lo marca presente y limpia para el siguiente
+    handleAsistenciaSearchKey(event) {
+      if (event.key === 'Escape') {
+        event.target.value = '';
+        this.renderAsistenciaView();
+        return;
+      }
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const { students } = this.getVisibleAsistenciaStudents();
+      if (students.length !== 1) {
+        this.showToast(students.length === 0 ? 'No hay coincidencias.' : `Hay ${students.length} coincidencias: seguí escribiendo o tocá el botón.`, 'info');
+        return;
+      }
+      const rec = window.DataService.getEncuentroAttendance(this.selectedEncuentroId, students[0].id);
+      if (!rec || !rec.presente) this.markEncuentroAttendance(students[0].id, true);
+      else this.showToast(`${students[0].apellido}, ${students[0].nombre} ya estaba presente.`, 'info');
+      event.target.value = '';
+      this.renderAsistenciaView();
+      event.target.focus();
+    }
+
+    exportEncuentroAttendance() {
+      if (typeof XLSX === 'undefined') {
+        this.showToast('No se pudo cargar el generador de Excel. Revisá la conexión a internet y recargá la página.', 'danger');
+        return;
+      }
+      const ds = window.DataService;
+      const wb = XLSX.utils.book_new();
+      ds.getEncuentros().forEach(e => {
+        const roster = this.getEncuentroRoster(e.id);
+        const aoa = [
+          ['EST UTN San Miguel - Ingreso 2027'],
+          [`Asistencia - ${e.nombre} - ${e.fechaCorta}`],
+          [],
+          ['N°', 'Apellido', 'Nombre', 'DNI', 'Asistencia', 'En la lista', 'Registrado por', 'Fecha y hora']
+        ];
+        roster.students.forEach((s, i) => {
+          const rec = ds.getEncuentroAttendance(e.id, s.id);
+          aoa.push([
+            i + 1, s.apellido, s.nombre, String(s.dni),
+            rec ? (rec.presente ? 'Presente' : 'Ausente') : 'Sin tomar',
+            roster.convocadosIds.has(s.id) ? 'Sí' : 'No',
+            rec ? (rec.updatedBy || '') : '',
+            rec && rec.updatedAt ? new Date(rec.updatedAt).toLocaleString('es-AR') : ''
+          ]);
+        });
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols'] = [{ wch: 5 }, { wch: 24 }, { wch: 26 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 22 }, { wch: 20 }];
+        XLSX.utils.book_append_sheet(wb, ws, e.hoja || e.id);
+      });
+      XLSX.writeFile(wb, `Asistencia_Encuentros_Ingreso_2027_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      this.showToast('📥 Asistencia de los encuentros descargada', 'success');
+    }
+
     // --- UTILIDADES Y FILTROS ---
 
     populateClassroomFilters() {
@@ -1472,16 +1716,18 @@
         if (navBtnExportar) navBtnExportar.style.display = 'flex';
       } else {
         // Preceptores: solo ven su carga, su dashboard personal de carga y el padrón de contactos
-        if (navBtnCarga) navBtnCarga.style.display = 'flex';
-        if (navBtnMiProgreso) navBtnMiProgreso.style.display = 'flex';
+        const cargaAbierta = window.DataService.canLoadExams();
+        if (navBtnCarga) navBtnCarga.style.display = cargaAbierta ? 'flex' : 'none';
+        if (navBtnMiProgreso) navBtnMiProgreso.style.display = cargaAbierta ? 'flex' : 'none';
         if (navBtnEstudiantes) navBtnEstudiantes.style.display = 'flex';
         if (navBtnMonitorPreceptores) navBtnMonitorPreceptores.style.display = 'none';
         if (navBtnAuditoria) navBtnAuditoria.style.display = 'none';
         if (navBtnEstadisticas) navBtnEstadisticas.style.display = 'none';
         if (navBtnExportar) navBtnExportar.style.display = 'none';
 
-        if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar'].includes(this.currentTab)) {
-          this.switchTab('mi-progreso');
+        if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar'].includes(this.currentTab) ||
+            (!cargaAbierta && ['carga', 'mi-progreso'].includes(this.currentTab))) {
+          this.switchTab(cargaAbierta ? 'mi-progreso' : 'asistencia');
         }
       }
     }
@@ -2029,7 +2275,9 @@
 
     renderAll() {
       this.updateSyncButtonState();
-      if (this.currentTab === 'carga') {
+      if (this.currentTab === 'asistencia') {
+        this.renderAsistenciaView();
+      } else if (this.currentTab === 'carga') {
         this.renderStudentSearchList();
         this.renderSelectedStudentCard();
         this.renderAnswerSheet();
