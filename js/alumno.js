@@ -73,7 +73,47 @@
     return '<div class="condition-banner condition-pendiente">⏳ Condición pendiente</div>';
   }
 
+  // Nota del examen de Prácticas del Lenguaje (16/10 o 30/10): solo existe cuando Dirección la publicó
+  function renderPdl(pdl) {
+    const card = $('resPdlCard');
+    if (!pdl) {
+      card.innerHTML = '';
+      card.style.display = 'none';
+      return;
+    }
+    const fmt2 = n => (typeof n === 'number') ? n.toFixed(2).replace('.', ',') : '-';
+    let body;
+    if (pdl.estado !== 'evaluado') {
+      body = '<p class="result-meta" style="margin-top: 0.5rem;">No hay un examen de Prácticas del Lenguaje registrado (ausente).</p>';
+    } else {
+      const secciones = Array.isArray(pdl.secciones) ? pdl.secciones : [];
+      const items = Array.isArray(pdl.items) ? pdl.items : [];
+      body = `
+        <div class="pdl-score-grid">
+          <div class="score-box final"><div class="lbl">Nota de Prácticas del Lenguaje</div><div class="val">${fmt2(pdl.nota)} <span class="of">/ 10</span></div></div>
+          ${secciones.map(s => `<div class="score-box"><div class="lbl">${escapeHtml(s.id)}. ${escapeHtml(s.titulo)}</div><div class="val" style="font-size: 1.2rem;">${fmt2(s.nota)} <span class="of">/ ${fmt2(s.max)}</span></div></div>`).join('')}
+        </div>
+        ${secciones.map(s => `
+          <div class="subject-title">Sección ${escapeHtml(s.id)} • ${escapeHtml(s.titulo)}</div>
+          ${items.filter(it => it.seccion === s.id).map(it => {
+            const cls = it.puntaje >= it.max ? 'ok' : (it.puntaje > 0 ? 'mid' : 'bad');
+            return `
+            <div class="answer-row">
+              <div class="answer-n">${escapeHtml(it.id)}</div>
+              <div class="answer-topic">${escapeHtml(it.criterio)}</div>
+              <span class="answer-result ${cls}">${fmt2(it.puntaje)} / ${fmt2(it.max)}</span>
+            </div>`;
+          }).join('')}`).join('')}`;
+    }
+    card.innerHTML = `
+      <h2 class="section-title">📖 Examen de Prácticas del Lenguaje</h2>
+      <div class="answers-summary">${escapeHtml(pdl.fechaTexto || '')}${pdl.tema ? ` • Tema ${escapeHtml(pdl.tema)}` : ''}</div>
+      ${body}`;
+    card.style.display = '';
+  }
+
   function renderResult(r) {
+    renderPdl(r.pdl);
     $('resName').textContent = `${r.apellido}, ${r.nombre}`;
     $('resMeta').textContent = `DNI ${r.dni}${r.tema ? ` • Tema ${r.tema}` : ''}`;
 
@@ -151,6 +191,7 @@
     $('dniInput').value = '';
     $('resAnswersBody').innerHTML = '';
     $('resSummary').innerHTML = '';
+    renderPdl(null);
     $('resultView').style.display = 'none';
     $('dniLoginCard').style.display = '';
     $('dniInput').focus();

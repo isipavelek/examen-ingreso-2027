@@ -64,14 +64,7 @@
       }
 
       if (searchQuery && searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        list = list.filter(item => {
-          const s = item.student;
-          return s.apellido.toLowerCase().includes(q) ||
-                 s.nombre.toLowerCase().includes(q) ||
-                 String(s.dni).includes(q) ||
-                 (s.familiar && s.familiar.toLowerCase().includes(q));
-        });
+        list = list.filter(item => window.DataService.studentMatchesSearch(item.student, searchQuery, ['familiar']));
       }
 
       return list;

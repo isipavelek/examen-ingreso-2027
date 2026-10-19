@@ -79,10 +79,37 @@ Pestaña **Asistencia Encuentros**, disponible para preceptores, Dirección y Vi
 
 ---
 
+## 🧭 Acceso único y navegación por instancias
+
+Todos ingresan por **`EST/index.html`** y el sistema deriva a cada uno:
+
+| Usuario | A dónde va |
+| :--- | :--- |
+| **Preceptores** | Sistema principal (carga del 2/10, Mi Progreso, Padrón). |
+| **Profesores de PdL** (Matias Demaro, Alexis Tagliavini) | `EST/instancias.html`: solo PdL 16/10 y PdL 30/10. |
+| **Dirección y Vicedirección** | Sistema principal, con una barra para moverse entre **Ingreso 2/10 · PdL 16/10 · Matemática 23/10 · PdL 30/10 · Resumen general**. |
+
+**Cada fecha de la 2da instancia** (`EST/instancias.html?fecha=16-10`, `23-10`, `30-10`) tiene:
+- **Presentismo:** es la misma toma de lista de *Asistencia Encuentros* (`instance_attendance`): lo que marcan los preceptores se ve acá y en el Resumen general, y Dirección también puede marcarlo desde esta pestaña. Los profesores de PdL no toman presentismo: solo corrigen, y un examen corregido cuenta como presente.
+- **PdL – Corrección por rúbrica:** se pica el nivel de cada uno de los 14 ítems y la nota se arma sola (atajos: `↑/↓` ítem, `1–4` nivel, `0` cero, `A/B` tema, `Enter` terminar).
+- **PdL – Resultados:** tabla con nota por sección y planilla Excel.
+- **Estadísticas de la instancia:** en PdL, distribución de notas, secciones, ítem por ítem, tema y corrector; en Matemática 23/10, presentismo (su corrección todavía no está cargada).
+- **PdL – Publicación (solo Dirección):** se habilita recién cuando todos los exámenes de la fecha están corregidos o ausentes; después los profesores no pueden modificar esa fecha.
+
+**Resumen general** (Dirección): tarjetas por instancia, recorrido de los estudiantes (inscriptos → presentes 2/10 → pasan → presentes y corregidos en 2da instancia), promedio por instancia y la trayectoria de cada estudiante. Las estadísticas particulares del 2/10 siguen en *Estadísticas Pedagógicas*.
+
+**Padrón de la 2da instancia:** lo envía Dirección desde *Actas y Exportación → 📖 Enviar padrón de la 2da instancia* (los que pasan; los del cronograma alternativo rinden PdL el 30/10; todos rinden Matemática el 23/10).
+
+**Corregir datos de un estudiante (solo Dirección):** en *Padrón y Contactos → ✏️ Editar datos* se cambian nombre, DNI, aula, escuela y contacto. Se guarda en `student_overrides` sobre el padrón original (se puede volver al original). Las notas, cargas, condición, correcciones y presentismo quedan vinculados al ID interno del estudiante; si ya tenía resultado publicado, pasa al DNI nuevo. Las listas de Dirección de la configuración (pasa por Dirección, cronograma alternativo) siguen usando el DNI original.
+
+**Profesores de PdL:** su UID, nombre y correo están en `data/pdlConfig.js` y en `firestore.rules` (función `isProfesorPdl`). Si cambian, actualizar ambos y volver a publicar las reglas.
+
+---
+
 ## 🚀 Cómo Abrir la Aplicación
 
 - **Estudiantes:** la página principal (`index.html`, la raíz del sitio) es la consulta de resultados con DNI.
-- **Personal (Dirección, Vicedirección y Preceptores):** ingresan por `/EST/` (`EST/index.html`). Con un servidor local: [**http://localhost:8080/EST/**](http://localhost:8080/EST/).
+- **Personal (Dirección, Vicedirección, Preceptores y Profesores de PdL):** ingresan por `/EST/` (`EST/index.html`). Con un servidor local: [**http://localhost:8080/EST/**](http://localhost:8080/EST/).
 
 1. Abrí `EST/index.html` en tu navegador habitual, o la dirección `/EST/` del sitio publicado.
 2. Verás la pantalla de inicio de sesión de Firebase.

@@ -226,6 +226,12 @@
         this.currentUser = firebaseUser;
         if (firebaseUser) {
           const authData = AUTHORIZED_USERS[firebaseUser.uid];
+          const profesoresPdl = (window.PDL_CONFIG && window.PDL_CONFIG.profesores) || [];
+          if (!authData && profesoresPdl.some(p => p.uid === firebaseUser.uid)) {
+            // Los profesores de PdL solo tienen acceso a la corrección de PdL
+            window.location.href = 'instancias.html?fecha=16-10';
+            return;
+          }
           if (authData) {
             this.currentProfile = authData;
             console.log('Firebase Auth exitoso:', authData.name, 'UID:', firebaseUser.uid);
@@ -293,7 +299,8 @@
     // --- LISTENERS EN TIEMPO REAL FIRESTORE ---
 
     teardownFirestoreListeners() {
-      ['unsubscribeSubmissions', 'unsubscribeResolutions', 'unsubscribeAttendance', 'unsubscribeInstanceOverrides', 'unsubscribeEncuentroAttendance', 'unsubscribeDeleted']
+      ['unsubscribeSubmissions', 'unsubscribeResolutions', 'unsubscribeAttendance', 'unsubscribeInstanceOverrides', 'unsubscribeEncuentroAttendance', 'unsubscribeDeleted',
+        'unsubscribePdlRoster', 'unsubscribePdlGrades', 'unsubscribeStudentOverrides']
         .forEach(key => {
           if (typeof this[key] === 'function') this[key]();
           this[key] = null;
@@ -382,6 +389,16 @@
           window.DataService.setEncuentroAttendanceFromCloud(attendMap);
         }, err => handleFirestoreError(err, 'instance_attendance'));
 
+      // 3d. Datos de estudiantes corregidos por Dirección (se aplican sobre el padrón original)
+      this.unsubscribeStudentOverrides = this.db.collection('student_overrides')
+        .onSnapshot(snapshot => {
+          const overrides = {};
+          snapshot.forEach(doc => {
+            overrides[doc.id] = doc.data();
+          });
+          window.DataService.setStudentOverridesFromCloud(overrides);
+        }, err => handleFirestoreError(err, 'student_overrides'));
+
       // 4. Escuchar anulaciones y eliminaciones de exámenes para propagar entre PCs
       try {
         this.unsubscribeDeleted = this.db.collection('deleted_submissions')
@@ -394,6 +411,22 @@
           });
       } catch (delErr) {
         console.warn('No se pudo inicializar listener de deleted_submissions:', delErr);
+      }
+
+      // 4b. Dirección: datos de la segunda instancia (PdL 16/10, Matemática 23/10, PdL 30/10) para el Resumen general
+      if (this.currentProfile && this.currentProfile.isAdmin) {
+        this.unsubscribePdlRoster = this.db.collection('pdl_config').doc('padron')
+          .onSnapshot(snap => {
+            const data = snap.exists ? snap.data() : null;
+            window.DataService.setInstanciasData({ roster: (data && Array.isArray(data.alumnos)) ? data.alumnos : [] });
+          }, err => handleFirestoreError(err, 'pdl_config'));
+        this.unsubscribePdlGrades = this.db.collection('pdl_grades')
+          .onSnapshot(snap => {
+            const grades = {};
+            snap.forEach(doc => { grades[doc.id] = doc.data(); });
+            window.DataService.setInstanciasData({ grades });
+          }, err => handleFirestoreError(err, 'pdl_grades'));
+        // El presentismo de cada encuentro llega por 'instance_attendance' (toma de lista, punto 3c)
       }
 
       // 5. Intentar sincronizar en segundo plano periódicamente si hay exámenes locales pendientes
@@ -915,7 +948,8 @@
       await this.withTimeout(record ? ref.set(record) : ref.delete(), 7000);
     }
 
-    // Publica en 'student_results/{dni}' lo que cada estudiante puede ver con su DNI
+    // Publica en 'student_results/{dni}' lo que cada estudiante puede ver con su DNI.
+    // Con merge: no se pisa la nota de PdL publicada desde la corrección de PdL (campo 'pdl').
     async publishStudentResults(docs) {
       if (!this.db) throw new Error('Base de datos Firestore no conectada.');
       const valid = (docs || []).filter(d => d && d.dni);
@@ -923,7 +957,7 @@
       for (let i = 0; i < valid.length; i += BATCH_SIZE) {
         const batch = this.db.batch();
         valid.slice(i, i + BATCH_SIZE).forEach(d => {
-          batch.set(this.db.collection('student_results').doc(d.dni), d);
+          batch.set(this.db.collection('student_results').doc(d.dni), d, { merge: true });
         });
         await this.withTimeout(batch.commit(), 20000);
       }
@@ -934,6 +968,53 @@
       if (!this.db) throw new Error('Base de datos Firestore no conectada.');
       const ref = this.db.collection('instance_attendance').doc(docId);
       await this.withTimeout(record ? ref.set(record) : ref.delete(), 7000);
+    }
+
+    // Datos del estudiante corregidos por Dirección; record = null vuelve a los datos originales
+    async pushStudentOverride(studentId, record) {
+      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
+      const ref = this.db.collection('student_overrides').doc(studentId);
+      await this.withTimeout(record ? ref.set(record) : ref.delete(), 7000);
+    }
+
+    // Actualiza las copias de DNI y nombre: el resultado publicado (se mueve al DNI nuevo, sin publicar
+    // nada que no estuviera publicado), el padrón de la 2da instancia y la corrección de PdL
+    async syncStudentIdentity(studentId, oldDni, ident, instancias) {
+      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
+      const batch = this.db.batch();
+      const results = this.db.collection('student_results');
+
+      const oldSnap = await this.withTimeout(results.doc(oldDni).get(), 7000);
+      if (oldSnap.exists) {
+        if (ident.dni !== oldDni) {
+          batch.set(results.doc(ident.dni), { ...oldSnap.data(), ...ident });
+          batch.delete(results.doc(oldDni));
+        } else {
+          batch.set(results.doc(oldDni), { apellido: ident.apellido, nombre: ident.nombre }, { merge: true });
+        }
+      }
+
+      const roster = (instancias && instancias.roster) || [];
+      if (roster.some(a => a.id === studentId)) {
+        const alumnos = roster.map(a => a.id === studentId ? { ...a, ...ident } : a);
+        batch.set(this.db.collection('pdl_config').doc('padron'), { alumnos }, { merge: true });
+      }
+
+      if (instancias && instancias.grades && instancias.grades[studentId]) {
+        batch.set(this.db.collection('pdl_grades').doc(studentId), ident, { merge: true });
+      }
+
+      await this.withTimeout(batch.commit(), 10000);
+    }
+
+    // Padrón de la 2da instancia (EST/instancias.html): solo datos básicos, sin contactos
+    async pushPdlRoster(alumnos) {
+      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
+      await this.withTimeout(this.db.collection('pdl_config').doc('padron').set({
+        alumnos,
+        actualizadoEn: new Date().toISOString(),
+        actualizadoPor: this.currentProfile ? this.currentProfile.name : 'Dirección'
+      }), 10000);
     }
 
     async pushAttendance(studentId, asistio) {

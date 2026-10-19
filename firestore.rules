@@ -24,21 +24,53 @@ service cloud.firestore {
       ]);
     }
 
+    // Profesores de PdL: solo acceden a la corrección de PdL (mismos UID que data/pdlConfig.js)
+    function isProfesorPdl() {
+      return request.auth != null && request.auth.uid in [
+        'unXa7nmvUUaO6m4TWyVS57sh6Bu2', // Matias Demaro
+        'gMq0OP0avdYqcU78JjE7SBH7uh23'  // Alexis Tagliavini
+      ];
+    }
+
+    // Una fecha de PdL publicada por Dirección queda cerrada para los profesores
+    function pdlPublicada(fecha) {
+      let pub = /databases/$(database)/documents/pdl_config/publicacion;
+      return exists(pub) && (fecha in get(pub).data.get('publicadas', {}));
+    }
+
     // Datos internos: solo personal autenticado (los estudiantes no pueden ver cargas ni correctores).
     // La carga del multiple choice está cerrada: los preceptores solo leen, Dirección puede corregir.
     match /exam_submissions/{id}     { allow read: if isStaff(); allow write: if isDireccion(); }
     match /deleted_submissions/{id}  { allow read: if isStaff(); allow write: if isDireccion(); }
     match /students_attendance/{id}  { allow read: if isStaff(); allow write: if isDireccion(); }
 
-    // Toma de lista de los encuentros de la próxima instancia (todo el personal)
+    // Toma de lista de los encuentros de la próxima instancia (PdL 16/10, Matemática 23/10, PdL 30/10).
+    // La toma el personal; los profesores de PdL solo la leen (no toman presentismo, solo corrigen).
     match /instance_attendance/{id} {
-      allow read, delete: if isStaff();
+      allow read: if isStaff() || isProfesorPdl();
+      allow delete: if isStaff();
       allow create, update: if isStaff()
         && request.resource.data.presente is bool
         && request.resource.data.updatedByUid == request.auth.uid;
     }
     match /exam_resolutions/{id}     { allow read: if isStaff(); allow write: if isDireccion(); }
     match /instance_overrides/{id}   { allow read: if isStaff(); allow write: if isDireccion(); }
+    // Datos del estudiante corregidos por Dirección (nombre, DNI, contacto...); las notas siguen vinculadas al ID
+    match /student_overrides/{id}    { allow read: if isStaff(); allow write: if isDireccion(); }
+
+    // Corrección de PdL por rúbrica (un documento por estudiante)
+    match /pdl_grades/{studentId} {
+      allow read: if isDireccion() || isProfesorPdl();
+      allow create, update: if isDireccion() || (isProfesorPdl()
+        && !pdlPublicada(request.resource.data.fecha)
+        && (resource == null || !pdlPublicada(resource.data.fecha)));
+      allow delete: if isDireccion();
+    }
+    // Padrón de la 2da instancia y estado de publicación de PdL: los arma Dirección
+    match /pdl_config/{docId} {
+      allow read: if isDireccion() || isProfesorPdl();
+      allow write: if isDireccion();
+    }
 
     // Resultado publicado para cada estudiante: se lee un documento por DNI, nunca el listado completo
     match /student_results/{dni} {

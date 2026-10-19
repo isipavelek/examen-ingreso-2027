@@ -5,6 +5,23 @@
  */
 
 (function () {
+  // Datos del estudiante que Dirección puede corregir. Las notas, cargas, correcciones y presentismo
+  // están vinculados al ID interno (EST-001...), así que no se pierden al cambiar el DNI o el nombre.
+  const STUDENT_EDITABLE_FIELDS = [
+    { key: 'apellido', label: 'Apellido', required: true },
+    { key: 'nombre', label: 'Nombre', required: true },
+    { key: 'dni', label: 'DNI', required: true },
+    { key: 'cuil', label: 'CUIL' },
+    { key: 'aula', label: 'Aula (2/10)' },
+    { key: 'escuela_origen', label: 'Escuela de origen' },
+    { key: 'familiar', label: 'Familiar / tutor' },
+    { key: 'telefono', label: 'Teléfono' },
+    { key: 'telefono_alt', label: 'Teléfono alternativo' },
+    { key: 'email', label: 'Email' },
+    { key: 'domicilio', label: 'Domicilio' },
+    { key: 'localidad', label: 'Localidad' }
+  ];
+
   class DataService {
     constructor() {
       this.students = window.INITIAL_STUDENTS || [];
@@ -17,12 +34,25 @@
       this.resolutions = {}; // studentId -> resolution object
       this.instanceOverrides = {}; // studentId -> { pasa, updatedBy, updatedAt } definido por Dirección
       this.encuentroAttendance = {}; // `${encuentroId}_${studentId}` -> { presente, updatedBy, updatedAt }
+      this.instancias = { roster: [], grades: {} }; // padrón y corrección de PdL de la 2da instancia (solo Dirección)
       this.currentUserProfile = null;
       this.listeners = new Set();
       this.init();
     }
 
     init() {
+      // Copia de los datos originales del padrón: los cambios de Dirección se aplican encima ('student_overrides')
+      this.studentOverrides = {};
+      this.studentOverridesVersion = 0;
+      this.originalStudentData = new Map();
+      this.students.forEach(st => {
+        const orig = {};
+        STUDENT_EDITABLE_FIELDS.forEach(f => { orig[f.key] = st[f.key] == null ? '' : st[f.key]; });
+        this.originalStudentData.set(st.id, orig);
+        // Las listas de Dirección de la configuración (pasa / cronograma alternativo) siguen al DNI original
+        st.dni_original = String(st.dni).replace(/\D/g, '');
+      });
+
       // Inicializar atributos auxiliares en estudiantes
       this.students.forEach(st => {
         const pair = window.FirebaseSyncService.getAssignedPreceptorsForStudent ? window.FirebaseSyncService.getAssignedPreceptorsForStudent(st.nro) : [];
@@ -191,6 +221,93 @@
       });
     }
 
+    // --- DATOS DEL ESTUDIANTE CORREGIDOS POR DIRECCIÓN ---
+
+    getStudentEditableFields() {
+      return STUDENT_EDITABLE_FIELDS;
+    }
+
+    getOriginalStudentData(studentId) {
+      return this.originalStudentData.get(studentId) || null;
+    }
+
+    getStudentOverride(studentId) {
+      return this.studentOverrides[studentId] || null;
+    }
+
+    setStudentOverridesFromCloud(overrides) {
+      this.studentOverrides = overrides || {};
+      this.students.forEach(st => {
+        const orig = this.originalStudentData.get(st.id);
+        const ov = this.studentOverrides[st.id];
+        STUDENT_EDITABLE_FIELDS.forEach(f => {
+          st[f.key] = (ov && ov.campos && ov.campos[f.key] !== undefined) ? ov.campos[f.key] : orig[f.key];
+        });
+      });
+      this.studentOverridesVersion++;
+      this.notify();
+    }
+
+    // changes: { campo: valor } con todos los campos editables. Solo se guardan los que difieren del original.
+    async updateStudentInfo(studentId, changes) {
+      if (!this.isAdmin()) throw new Error('Solo Dirección puede modificar los datos de un estudiante.');
+      const student = this.getStudentById(studentId);
+      if (!student) throw new Error('Estudiante no encontrado');
+      const orig = this.originalStudentData.get(studentId);
+
+      const clean = {};
+      STUDENT_EDITABLE_FIELDS.forEach(f => {
+        let v = changes[f.key] !== undefined ? String(changes[f.key]).trim() : String(student[f.key] == null ? '' : student[f.key]);
+        if (f.key === 'dni' || f.key === 'cuil') v = v.replace(/\D/g, '');
+        if (f.required && !v) throw new Error(`El campo ${f.label} es obligatorio.`);
+        clean[f.key] = v;
+      });
+      if (clean.dni.length < 7 || clean.dni.length > 9) throw new Error('El DNI debe tener entre 7 y 9 números.');
+      const dup = this.students.find(s => s.id !== studentId && String(s.dni).replace(/\D/g, '') === clean.dni);
+      if (dup) throw new Error(`El DNI ${clean.dni} ya pertenece a ${dup.apellido}, ${dup.nombre}.`);
+
+      const campos = {};
+      STUDENT_EDITABLE_FIELDS.forEach(f => {
+        if (String(orig[f.key]) !== clean[f.key]) campos[f.key] = clean[f.key];
+      });
+      return this.applyStudentChange(student, Object.keys(campos).length ? campos : null);
+    }
+
+    async restoreStudentInfo(studentId) {
+      if (!this.isAdmin()) throw new Error('Solo Dirección puede modificar los datos de un estudiante.');
+      const student = this.getStudentById(studentId);
+      if (!student) throw new Error('Estudiante no encontrado');
+      return this.applyStudentChange(student, null);
+    }
+
+    // Guarda el cambio (o lo borra con campos = null) y actualiza las copias del nombre y DNI
+    // en lo ya publicado o enviado: resultado del estudiante, padrón de 2da instancia y corrección de PdL
+    async applyStudentChange(student, campos) {
+      const oldDni = String(student.dni).replace(/\D/g, '');
+      const record = campos ? {
+        studentId: student.id,
+        campos,
+        actualizadoPor: this.currentUserProfile.name,
+        actualizadoPorUid: this.currentUserProfile.uid,
+        actualizadoEn: new Date().toISOString()
+      } : null;
+      await window.FirebaseSyncService.pushStudentOverride(student.id, record);
+
+      const overrides = { ...this.studentOverrides };
+      if (record) overrides[student.id] = record;
+      else delete overrides[student.id];
+      this.setStudentOverridesFromCloud(overrides);
+
+      const ident = { dni: String(student.dni).replace(/\D/g, ''), apellido: student.apellido, nombre: student.nombre };
+      await window.FirebaseSyncService.syncStudentIdentity(student.id, oldDni, ident, this.instancias);
+      return { dniChanged: oldDni !== ident.dni };
+    }
+
+    setInstanciasData(partial) {
+      this.instancias = { ...this.instancias, ...partial };
+      this.notify();
+    }
+
     setInstanceOverridesFromCloud(overrides) {
       this.instanceOverrides = overrides || {};
       this.notify();
@@ -213,6 +330,24 @@
 
     getStudents() {
       return this.students;
+    }
+
+    // Texto para comparar en búsquedas: sin tildes, sin mayúsculas ni comas ("Rodríguez" = "rodriguez")
+    normalizeText(value) {
+      return String(value == null ? '' : value)
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/,/g, ' ').replace(/\s+/g, ' ')
+        .toLowerCase().trim();
+    }
+
+    // Busca en apellido, nombre y DNI, más los campos extra indicados: cada palabra buscada
+    // tiene que aparecer, en cualquier orden ("alejandro rodriguez" encuentra "Rodríguez, Alejandro Ian")
+    studentMatchesSearch(student, query, extraFields = []) {
+      const words = this.normalizeText(query).split(' ').filter(Boolean);
+      if (words.length === 0) return true;
+      const hay = [student.apellido, student.nombre, student.dni, ...extraFields.map(f => student[f])]
+        .map(v => this.normalizeText(v)).join(' | ');
+      return words.every(w => hay.includes(w));
     }
 
     getStudentById(id) {
@@ -643,7 +778,7 @@
       if (hasScore && finalScore >= this.getPassThreshold()) {
         return { pasa: true, isPassed: true, pasaOrigen: 'nota' };
       }
-      const cleanDni = String(student.dni).replace(/\D/g, '');
+      const cleanDni = student.dni_original || String(student.dni).replace(/\D/g, ''); // la lista usa el DNI original
       const listaDireccion = (window.EXAM_CONFIG && window.EXAM_CONFIG.pasaPorDireccionDni) || [];
       if (listaDireccion.includes(cleanDni)) {
         return { pasa: true, isPassed: true, pasaOrigen: 'lista_direccion' };
@@ -716,7 +851,7 @@
 
     // Cronograma de la próxima instancia: 'alternativo' para los DNI indicados por Dirección, 'general' para el resto
     getNextInstanceSchedule(student) {
-      const cleanDni = String(student.dni).replace(/\D/g, '');
+      const cleanDni = student.dni_original || String(student.dni).replace(/\D/g, ''); // la lista usa el DNI original
       const alternativos = (window.EXAM_CONFIG && window.EXAM_CONFIG.cronogramaAlternativoDni) || [];
       return alternativos.includes(cleanDni) ? 'alternativo' : 'general';
     }
@@ -799,6 +934,28 @@
       const docs = this.getConsolidatedResults().map(item => this.buildStudentPublicResult(item));
       await window.FirebaseSyncService.publishStudentResults(docs);
       return docs.length;
+    }
+
+    // Padrón de PdL: los que pasan, con la fecha de su examen (alternativo rinde el 30/10)
+    buildPdlRoster() {
+      return this.getConsolidatedResults()
+        .filter(item => item.pasa === true)
+        .map(item => ({
+          id: item.student.id,
+          dni: String(item.student.dni).replace(/\D/g, ''),
+          apellido: item.student.apellido,
+          nombre: item.student.nombre,
+          fecha: this.getNextInstanceSchedule(item.student) === 'alternativo' ? '30-10' : '16-10'
+        }))
+        .sort((a, b) =>
+          a.apellido.localeCompare(b.apellido, 'es', { sensitivity: 'base' }) ||
+          a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+    }
+
+    async publishPdlRoster() {
+      const alumnos = this.buildPdlRoster();
+      await window.FirebaseSyncService.pushPdlRoster(alumnos);
+      return alumnos;
     }
 
     // --- MONITOREO DE PROGRESO DE PRECEPTORES (REPARTICIÓN POR CANTIDAD) ---

@@ -2169,3 +2169,84 @@ h1, h2, h3, h4, h5, h6 {
     padding: 1rem;
   }
 }
+
+/* ==========================================================================
+   INSTANCIAS DEL INGRESO (2/10, PdL 16/10, Matemática 23/10, PdL 30/10)
+   ========================================================================== */
+
+.instance-bar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1.5rem;
+  background: rgba(15, 23, 42, 0.7);
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: var(--header-height);
+  z-index: 90;
+}
+
+.instance-chip {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.03);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.instance-chip:hover {
+  color: var(--text-main);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.instance-chip.active {
+  color: #fff;
+  background: rgba(59, 130, 246, 0.25);
+  border-color: #3b82f6;
+}
+
+.pill-mini { font-size: 0.7rem; font-weight: 700; padding: 0.12rem 0.45rem; border-radius: var(--radius-sm); white-space: nowrap; }
+.st-corregido, .st-presente { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.st-en_progreso { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.st-pendiente, .st-sin_registrar { background: rgba(148, 163, 184, 0.12); color: #94a3b8; }
+.st-ausente { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+.fecha-badge { font-size: 0.7rem; font-weight: 700; background: rgba(139, 92, 246, 0.15); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.3); padding: 0.1rem 0.4rem; border-radius: var(--radius-sm); white-space: nowrap; }
+
+/* Barras horizontales de una sola serie (estadísticas de instancias y resumen general) */
+.hbar-row { display: grid; grid-template-columns: minmax(8rem, 22rem) minmax(0, 1fr) 4.2rem; gap: 0.6rem; align-items: center; padding: 0.3rem 0; font-size: 0.8rem; }
+.hbar-label { color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { height: 14px; background: rgba(255, 255, 255, 0.06); border-radius: 4px; overflow: hidden; }
+.hbar-fill { height: 100%; background: var(--color-primary); border-radius: 0 4px 4px 0; }
+.hbar-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-main); font-weight: 600; }
+.hbar-row:hover .hbar-fill { background: #60a5fa; }
+
+/* Resumen general */
+.general-inst-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.general-inst-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 1.1rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.general-inst-card h3 { font-size: 1rem; }
+.general-inst-sub { font-size: 0.75rem; color: var(--text-muted); }
+.general-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem; }
+.general-metric { background: rgba(15, 23, 42, 0.7); border-radius: var(--radius-md); padding: 0.45rem; text-align: center; }
+.general-metric .v { font-family: 'Outfit', sans-serif; font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.general-metric .l { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; line-height: 1.2; }
+
+@media (max-width: 600px) {
+  .instance-bar { padding: 0.5rem 1rem; top: 0; position: static; }
+  .hbar-row { grid-template-columns: 7rem minmax(0, 1fr) 3.4rem; }
+}
+
+/* Edición de datos del estudiante (Dirección) */
+.student-edit-note { font-size: 0.82rem; color: var(--text-muted); background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-md); padding: 0.7rem 0.9rem; margin-bottom: 1rem; line-height: 1.45; }
+.student-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem 1rem; }
+.student-edit-field label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.25rem; }
+.student-edit-field .form-control-auth { width: 100%; }
+.student-edit-field.changed .form-control-auth { border-color: #f59e0b; }
+.student-edit-orig { display: block; font-size: 0.7rem; color: #fbbf24; margin-top: 0.2rem; overflow-wrap: anywhere; }
+.badge-edited { font-size: 0.65rem; font-weight: 700; color: #fbbf24; background: rgba(245, 158, 11, 0.15); border-radius: var(--radius-sm); padding: 0.05rem 0.35rem; margin-left: 0.35rem; }
+@media (max-width: 600px) { .student-edit-grid { grid-template-columns: minmax(0, 1fr); } }

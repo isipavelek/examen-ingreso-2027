@@ -9,3 +9,6 @@ Thumbs.db
 # Reportes con datos personales de estudiantes (no publicar)
 reportes/
 .vscode/
+
+# Examen y rúbrica de PdL (no publicar: el repositorio es público)
+Examen 16-10/

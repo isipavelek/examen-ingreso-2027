@@ -7,7 +7,7 @@
   <meta name="description" content="Sistema de evaluación, doble carga cruzada, analíticas y gestión del examen de ingreso a 1.er año 2027 de la Escuela Secundaria Técnica UTN San Miguel.">
 
   <!-- Hojas de estilo y tipografías -->
-  <link rel="stylesheet" href="../css/styles.css?v=2027.11">
+  <link rel="stylesheet" href="../css/styles.css?v=2027.13">
 
   <!-- Firebase SDK Compat Oficial -->
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -67,6 +67,12 @@
           </button>
           <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('emilia.caspani@inspt.utn.edu.ar')">
             👩‍🏫 Emilia
+          </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('matias.demaro@inspt.utn.edu.ar')">
+            📖 Matias Demaro (PdL)
+          </button>
+          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('alexis.tagliavini@inspt.utn.edu.ar')">
+            📖 Alexis Tagliavini (PdL)
           </button>
         </div>
 
@@ -158,6 +164,9 @@
       </div>
     </div>
   </header>
+
+  <!-- Barra de instancias (solo Dirección): 2/10, PdL 16/10, Matemática 23/10, PdL 30/10 y Resumen general -->
+  <div class="instance-bar" id="instanceBar" style="display: none;"></div>
 
   <!-- ==========================================================================
        SECCIÓN: TOMA DE LISTA DE LOS ENCUENTROS DE LA PRÓXIMA INSTANCIA
@@ -857,6 +866,67 @@
   </main>
 
   <!-- ==========================================================================
+       RESUMEN GENERAL DE TODAS LAS INSTANCIAS (DIRECCIÓN)
+       ========================================================================== -->
+  <main id="view-general" class="view-section">
+    <div class="audit-toolbar">
+      <div>
+        <h2 style="font-size: 1.2rem; margin-bottom: 0.2rem;">📊 Resumen general del Ingreso 2027</h2>
+        <small class="text-muted" id="generalSubtitle">Todas las instancias: presentismo, resultados y recorrido de cada estudiante</small>
+      </div>
+    </div>
+
+    <div class="general-inst-grid" id="generalInstCards"></div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h2 class="chart-card-title">Recorrido de los estudiantes</h2>
+          <small class="text-muted">Cuántos llegan a cada paso, sobre el total de inscriptos</small>
+        </div>
+        <div id="generalFunnel"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <h2 class="chart-card-title">Promedio por instancia (/10)</h2>
+          <small class="text-muted">Solo exámenes evaluados o con corrección terminada</small>
+        </div>
+        <div id="generalAverages"></div>
+      </div>
+    </div>
+
+    <div class="audit-toolbar">
+      <div class="filter-group">
+        <input type="text" id="generalSearch" class="form-control-search" style="width: 260px;" placeholder="Buscar estudiante o DNI..." oninput="window.app.renderGeneralTable()">
+        <select id="generalFilter" class="form-select-sm" style="width: 240px;" onchange="window.app.renderGeneralTable()">
+          <option value="all">Todos los inscriptos</option>
+          <option value="pasan">Solo los que pasan a la 2da instancia</option>
+          <option value="no_pasan">Los que no pasan</option>
+        </select>
+      </div>
+      <div id="generalCount" class="badge-role" style="color: var(--color-accent);">-</div>
+    </div>
+    <div class="table-responsive" style="overflow-x: auto;">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th>Estudiante</th>
+            <th>DNI</th>
+            <th class="text-center">2/10 Asistencia</th>
+            <th class="text-center">2/10 Nota</th>
+            <th class="text-center">Condición</th>
+            <th class="text-center">PdL (fecha)</th>
+            <th class="text-center">PdL Asistencia</th>
+            <th class="text-center">PdL Nota</th>
+            <th class="text-center">Mat. 23/10 Asistencia</th>
+          </tr>
+        </thead>
+        <tbody id="generalTableBody"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- ==========================================================================
        SECCIÓN 4: PADRÓN COMPLETO Y CONTACTOS
        ========================================================================== -->
   <main id="view-estudiantes" class="view-section">
@@ -925,6 +995,9 @@
         </button>
         <button class="btn btn-primary" onclick="window.app.publishStudentResults()" title="Publica los resultados para que cada estudiante los consulte con su DNI">
           📤 Publicar resultados para estudiantes
+        </button>
+        <button class="btn btn-primary" onclick="window.app.sendPdlRoster()" title="Envía la lista de los que pasan a la segunda instancia: PdL 16/10, Matemática 23/10 y PdL 30/10">
+          📖 Enviar padrón de la 2da instancia
         </button>
         <button class="btn btn-primary" onclick="window.app.exportNextInstanceLists()" title="Excel con una hoja por examen: PdL 16/10, Matemática 23/10 y PdL 30/10">
           📋 Descargar listas de la próxima instancia (Excel)
@@ -1143,16 +1216,49 @@
     </div>
   </div>
 
+  <!-- ==========================================================================
+       MODAL: EDITAR DATOS DEL ESTUDIANTE (SOLO DIRECCIÓN)
+       ========================================================================== -->
+  <div id="modalStudentEdit" class="modal-backdrop">
+    <div class="modal-dialog-large" style="max-width: 760px;">
+      <div class="modal-header">
+        <div>
+          <h2 id="studentEditTitle" style="font-size: 1.2rem; font-weight: 700; margin: 0;">Editar datos del estudiante</h2>
+          <div id="studentEditSubtitle" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;"></div>
+        </div>
+        <button type="button" class="btn-close" onclick="window.app.closeStudentEdit()">&times;</button>
+      </div>
+      <form id="studentEditForm" onsubmit="window.app.saveStudentEdit(event)" style="display: contents;">
+        <div class="modal-body">
+          <div class="student-edit-note">
+            🔗 Las notas del 2/10, la condición, la corrección y el presentismo de la 2da instancia quedan vinculados al estudiante aunque cambies su DNI o su nombre. Si ya tiene un resultado publicado, se actualiza con los datos nuevos (y con el DNI nuevo para consultarlo).
+          </div>
+          <div id="studentEditFields" class="student-edit-grid"></div>
+          <div id="studentEditError" class="auth-error-alert" style="display: none; margin-top: 1rem;"></div>
+        </div>
+        <div class="modal-footer" style="gap: 0.5rem; justify-content: space-between; flex-wrap: wrap;">
+          <button type="button" id="btnStudentEditRestore" class="btn btn-secondary" onclick="window.app.restoreStudentEdit()">↩ Volver a los datos originales</button>
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary" onclick="window.app.closeStudentEdit()">Cancelar</button>
+            <button type="submit" id="btnStudentEditSave" class="btn btn-primary">💾 Guardar cambios</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Contenedor para Notificaciones Toast -->
   <div id="toastContainer" class="toast-container"></div>
 
   <!-- Carga de Datos y Scripts de la Aplicación -->
   <script src="../data/examConfig.js?v=2027.10"></script>
+  <script src="../data/pdlConfig.js?v=2027.4"></script>
+  <script src="../js/instancias-core.js?v=2027.2"></script>
   <script src="../data/students.js?v=2027.4"></script>
-  <script src="../js/firebase-sync.js?v=2027.8"></script>
-  <script src="../js/data-service.js?v=2027.11"></script>
+  <script src="../js/firebase-sync.js?v=2027.11"></script>
+  <script src="../js/data-service.js?v=2027.15"></script>
   <script src="../js/analytics.js?v=2027.7"></script>
-  <script src="../js/audit.js?v=2027.4"></script>
-  <script src="../js/app.js?v=2027.10"></script>
+  <script src="../js/audit.js?v=2027.5"></script>
+  <script src="../js/app.js?v=2027.14"></script>
 </body>
 </html>

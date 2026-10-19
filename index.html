@@ -44,6 +44,9 @@
     .answer-result { font-size: 0.82rem; font-weight: 700; padding: 0.25rem 0.6rem; border-radius: var(--radius-full); white-space: nowrap; }
     .answer-result.ok { color: #34d399; background: rgba(16, 185, 129, 0.15); }
     .answer-result.bad { color: #f87171; background: rgba(239, 68, 68, 0.12); }
+    .answer-result.mid { color: #fbbf24; background: rgba(245, 158, 11, 0.12); }
+    .pdl-score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; margin-top: 0.75rem; }
+    .pdl-score-grid .score-box.final { grid-column: 1 / -1; }
     .schedule-card { margin-top: 1rem; padding: 1rem 1.1rem; border-radius: var(--radius-md); background: var(--bg-elevated); border: 1px solid rgba(16, 185, 129, 0.35); }
     .schedule-item { margin-top: 0.85rem; }
     .schedule-title { font-weight: 700; font-size: 1rem; margin-bottom: 0.35rem; }
@@ -96,6 +99,8 @@
         <div id="resSummary"></div>
       </div>
 
+      <div class="student-card" id="resPdlCard" style="display: none;"></div>
+
       <div class="student-card" id="resAnswersCard" style="display: none;">
         <h2 class="section-title">Tus respuestas</h2>
         <div class="answers-summary" id="resAnswersSummary"></div>
@@ -104,6 +109,6 @@
     </section>
   </div>
 
-  <script src="js/alumno.js?v=2027.10"></script>
+  <script src="js/alumno.js?v=2027.11"></script>
 </body>
 </html>

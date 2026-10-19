@@ -259,8 +259,11 @@
         scopeSelect.disabled = false;
       }
 
-      // Con la carga cerrada, todo el personal entra a la toma de lista de los encuentros
-      if (window.DataService.isCargaCerrada()) {
+      // Dirección puede llegar al Resumen general desde otra instancia (#general); con la carga cerrada,
+      // el resto del personal entra a la toma de lista de los encuentros
+      if (profile.isAdmin && window.location.hash === '#general') {
+        this.switchTab('general');
+      } else if (window.DataService.isCargaCerrada()) {
         this.switchTab('asistencia');
       } else if (!profile.isAdmin) {
         this.switchTab('carga');
@@ -284,7 +287,7 @@
       const isAd = window.DataService.isAdmin();
 
       // Bloquear accesos directos o no autorizados a preceptores
-      if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar'].includes(tabName) && !isAd) {
+      if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar', 'general'].includes(tabName) && !isAd) {
         this.showToast('Acceso restringido: Esta sección es exclusiva de Dirección y Vicedirección.', 'warning');
         return;
       }
@@ -302,6 +305,7 @@
       document.querySelectorAll('.view-section').forEach(sec => {
         sec.classList.toggle('active', sec.id === `view-${tabName}`);
       });
+      this.renderInstanceBar();
 
       if (tabName === 'asistencia') {
         this.renderAsistenciaView();
@@ -322,7 +326,187 @@
         this.renderStudentsDirectory();
       } else if (tabName === 'exportar') {
         this.renderExportView();
+      } else if (tabName === 'general') {
+        this.renderGeneralView();
       }
+    }
+
+    // Barra de instancias (solo Dirección): esta página es la del 2/10 y el Resumen general;
+    // las demás fechas abren EST/instancias.html
+    renderInstanceBar() {
+      const bar = document.getElementById('instanceBar');
+      if (!bar || !window.InstanciasCore) return;
+      if (!window.DataService.isAdmin()) {
+        bar.style.display = 'none';
+        return;
+      }
+      window.InstanciasCore.renderInstanceBar(bar, {
+        active: this.currentTab === 'general' ? 'general' : '02-10',
+        isAdmin: true,
+        onSelect: id => {
+          if (id === 'general') {
+            this.switchTab('general');
+            return true;
+          }
+          if (id === '02-10') {
+            if (this.currentTab === 'general') this.switchTab('monitor-preceptores');
+            return true;
+          }
+          return false;
+        }
+      });
+    }
+
+    // --- RESUMEN GENERAL DE TODAS LAS INSTANCIAS (DIRECCIÓN) ---
+
+    // Datos por estudiante: 2/10, condición y segunda instancia (PdL de su fecha y Matemática 23/10)
+    getGeneralRows() {
+      const ds = window.DataService;
+      const core = window.InstanciasCore;
+      const { roster, grades } = ds.instancias;
+      const asistencia = core.asistenciaPorInstancia(ds.encuentroAttendance); // toma de lista de los encuentros
+      const rosterById = new Map(roster.map(r => [r.id, r]));
+      return ds.getConsolidatedResults().map(item => {
+        const r = rosterById.get(item.student.id) || null;
+        const pdlFecha = r ? r.fecha : null;
+        const g = grades[item.student.id] || null;
+        const pdlAtt = pdlFecha ? (asistencia[pdlFecha] || {})[item.student.id] : null;
+        const pdlEstado = pdlFecha ? core.estadoPdl(g, pdlAtt) : null;
+        return {
+          item,
+          enPadron: !!r,
+          pdlFecha,
+          pdlPresencia: pdlFecha ? core.presencia(pdlFecha, g, pdlAtt) : null,
+          pdlEstado,
+          pdlNota: (g && pdlEstado === 'corregido') ? g.nota : null,
+          matPresencia: r ? core.presencia('23-10', null, (asistencia['23-10'] || {})[item.student.id]) : null
+        };
+      });
+    }
+
+    renderGeneralView() {
+      const rows = this.getGeneralRows();
+      const core = window.InstanciasCore;
+      const fmt = n => (typeof n === 'number') ? n.toFixed(2).replace('.', ',') : '-';
+      const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+      const total = rows.length;
+
+      // 2/10: múltiple choice
+      const presentes210 = rows.filter(r => r.item.student.asistio).length;
+      const notas210 = rows.map(r => r.item.finalScore).filter(n => typeof n === 'number');
+      const pasan = rows.filter(r => r.item.pasa === true).length;
+      const cards = [{
+        inst: core.getInstancia('02-10'),
+        metrics: [
+          ['Inscriptos', total], ['Presentes', presentes210], ['Ausentes', total - presentes210],
+          ['Evaluados', notas210.length], ['Promedio', fmt(avg(notas210))], ['Pasan', pasan]
+        ],
+        action: `<button class="btn btn-secondary btn-sm" onclick="window.app.switchTab('estadisticas')">Ver estadísticas del 2/10 ➔</button>`
+      }];
+
+      // Segunda instancia: una tarjeta por fecha
+      ['16-10', '23-10', '30-10'].forEach(fecha => {
+        const inst = core.getInstancia(fecha);
+        const conv = inst.tipo === 'mat' ? rows.filter(r => r.enPadron) : rows.filter(r => r.pdlFecha === fecha);
+        const pres = r => inst.tipo === 'mat' ? r.matPresencia : r.pdlPresencia;
+        const presentes = conv.filter(r => pres(r) === 'presente').length;
+        const ausentes = conv.filter(r => pres(r) === 'ausente').length;
+        const metrics = [['Convocados', conv.length], ['Presentes', presentes], ['Ausentes', ausentes], ['Sin registrar', conv.length - presentes - ausentes]];
+        if (inst.tipo === 'pdl') {
+          const notas = conv.map(r => r.pdlNota).filter(n => typeof n === 'number');
+          metrics.push(['Corregidos', notas.length], ['Promedio', fmt(avg(notas))]);
+        } else {
+          metrics.push(['Corrección pendiente', '–'], ['Promedio', '-']);
+        }
+        cards.push({
+          inst,
+          metrics,
+          action: `<a class="btn btn-secondary btn-sm" style="text-decoration: none;" href="instancias.html?fecha=${fecha}&tab=estadisticas">Ver detalle de ${inst.titulo} ➔</a>`
+        });
+      });
+
+      document.getElementById('generalInstCards').innerHTML = cards.map(c => `
+        <div class="general-inst-card">
+          <div>
+            <h3>${c.inst.icono} ${c.inst.titulo}</h3>
+            <div class="general-inst-sub">${c.inst.fechaTexto} • ${c.inst.detalle}</div>
+          </div>
+          <div class="general-metrics">
+            ${c.metrics.map(([l, v]) => `<div class="general-metric"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('')}
+          </div>
+          <div>${c.action}</div>
+        </div>`).join('');
+
+      document.getElementById('generalSubtitle').textContent = window.DataService.instancias.roster.length > 0
+        ? 'Todas las instancias: presentismo, resultados y recorrido de cada estudiante'
+        : 'Falta enviar el padrón de la 2da instancia (Actas y Exportación) para ver PdL y Matemática';
+
+      const hbar = (label, value, max, text) => `
+        <div class="hbar-row" title="${label}: ${text}">
+          <span class="hbar-label">${label}</span>
+          <div class="hbar-track"><div class="hbar-fill" style="width: ${max ? Math.min(100, value / max * 100) : 0}%;"></div></div>
+          <span class="hbar-val">${text}</span>
+        </div>`;
+
+      const funnel = [
+        ['Inscriptos', total],
+        ['Presentes 2/10', presentes210],
+        ['Pasan a 2da instancia', pasan],
+        ['Presentes PdL (16/10 y 30/10)', rows.filter(r => r.pdlPresencia === 'presente').length],
+        ['PdL corregidos', rows.filter(r => typeof r.pdlNota === 'number').length],
+        ['Presentes Matemática 23/10', rows.filter(r => r.matPresencia === 'presente').length]
+      ];
+      document.getElementById('generalFunnel').innerHTML = funnel.map(([l, v]) => hbar(l, v, total, String(v))).join('');
+
+      const notasPdl = fecha => rows.filter(r => r.pdlFecha === fecha).map(r => r.pdlNota).filter(n => typeof n === 'number');
+      const promedios = [['2/10 nota final', notas210], ['PdL 16/10', notasPdl('16-10')], ['PdL 30/10', notasPdl('30-10')]];
+      document.getElementById('generalAverages').innerHTML = promedios.map(([l, arr]) => {
+        const a = avg(arr);
+        return hbar(`${l} (${arr.length})`, a || 0, 10, fmt(a));
+      }).join('') + '<div class="text-muted" style="font-size: 0.75rem; margin-top: 0.5rem;">Matemática 23/10 se suma cuando se cargue su corrección.</div>';
+
+      this.renderGeneralTable(rows);
+    }
+
+    renderGeneralTable(rows) {
+      const tbody = document.getElementById('generalTableBody');
+      if (!tbody) return;
+      rows = rows || this.getGeneralRows();
+      const q = (document.getElementById('generalSearch').value || '').trim().toLowerCase();
+      const filter = document.getElementById('generalFilter').value;
+      const fmt = n => (typeof n === 'number') ? n.toFixed(2).replace('.', ',') : '-';
+      const presPill = p => {
+        if (!p) return '<span class="text-muted">-</span>';
+        const label = { presente: '✔ Presente', ausente: '✘ Ausente', sin_registrar: '— Sin registrar' }[p];
+        return `<span class="pill-mini st-${p}">${label}</span>`;
+      };
+      const list = rows.filter(r => {
+        const st = r.item.student;
+        if (filter === 'pasan' && r.item.pasa !== true) return false;
+        if (filter === 'no_pasan' && r.item.pasa === true) return false;
+        return window.DataService.studentMatchesSearch(st, q);
+      });
+      document.getElementById('generalCount').textContent = `${list.length} estudiantes`;
+      tbody.innerHTML = list.map(r => {
+        const st = r.item.student;
+        const cond = r.item.pasa === true ? '<span class="status-pill pill-success">Pasa</span>'
+          : (r.item.pasa === false ? '<span class="status-pill pill-danger">No pasa</span>' : '<span class="status-pill pill-warning">Pendiente</span>');
+        let pdlNota = '-';
+        if (r.pdlEstado === 'corregido') pdlNota = `<strong>${fmt(r.pdlNota)}</strong>`;
+        else if (r.pdlEstado && r.pdlEstado !== 'ausente') pdlNota = '<span class="text-muted">En corrección</span>';
+        return `
+          <tr>
+            <td><strong>${st.apellido}, ${st.nombre}</strong></td>
+            <td>${st.dni}</td>
+            <td class="text-center">${presPill(st.asistio ? 'presente' : 'ausente')}</td>
+            <td class="text-center">${fmt(r.item.finalScore)}</td>
+            <td class="text-center">${cond}</td>
+            <td class="text-center">${r.pdlFecha ? `<span class="fecha-badge">${r.pdlFecha.replace('-', '/')}</span>` : '-'}</td>
+            <td class="text-center">${presPill(r.pdlPresencia)}</td>
+            <td class="text-center">${pdlNota}</td>
+            <td class="text-center">${presPill(r.matPresencia)}</td>
+          </tr>`;
+      }).join('');
     }
 
     // --- CARGA ÁGIL DE EXÁMENES ---
@@ -361,14 +545,9 @@
       }
 
       // Búsqueda
-      const q = this.searchQuery.trim().toLowerCase();
+      const q = this.searchQuery.trim();
       if (q) {
-        students = students.filter(s => {
-          return s.apellido.toLowerCase().includes(q) ||
-                 s.nombre.toLowerCase().includes(q) ||
-                 String(s.dni).includes(q) ||
-                 (s.familiar && s.familiar.toLowerCase().includes(q));
-        });
+        students = students.filter(s => window.DataService.studentMatchesSearch(s, q, ['familiar']));
       }
 
       return students;
@@ -1149,13 +1328,7 @@
       }
 
       if (q) {
-        students = students.filter(s => {
-          return s.apellido.toLowerCase().includes(q) ||
-                 s.nombre.toLowerCase().includes(q) ||
-                 String(s.dni).includes(q) ||
-                 (s.familiar && s.familiar.toLowerCase().includes(q)) ||
-                 (s.escuela_origen && s.escuela_origen.toLowerCase().includes(q));
-        });
+        students = students.filter(s => window.DataService.studentMatchesSearch(s, q, ['familiar', 'escuela_origen']));
       }
 
       const totalCountEl = document.getElementById('dirTotalCount');
@@ -1166,6 +1339,7 @@
         return;
       }
 
+      const isAdmin = window.DataService.isAdmin();
       let html = '';
       students.forEach((s, idx) => {
         const subs = window.DataService.getSubmissionsForStudent(s.id);
@@ -1185,7 +1359,7 @@
         html += `
           <tr>
             <td class="text-center text-muted">${idx + 1}</td>
-            <td><strong>${s.apellido}, ${s.nombre}</strong></td>
+            <td><strong>${s.apellido}, ${s.nombre}</strong>${window.DataService.getStudentOverride(s.id) ? '<span class="badge-edited" title="Datos corregidos por Dirección">editado</span>' : ''}</td>
             <td>${s.dni}</td>
             <td class="text-center"><span class="badge badge-aula">A${s.aula}</span></td>
             <td class="text-center">${loadsBadge}</td>
@@ -1205,6 +1379,11 @@
                   📞
                 </a>
               ` : ''}
+              ${isAdmin ? `
+                <button type="button" class="btn btn-sm btn-secondary me-1" onclick="window.app.openStudentEdit('${s.id}')" title="Corregir nombre, DNI o datos de contacto">
+                  ✏️ Editar datos
+                </button>
+              ` : ''}
               ${window.DataService.canLoadExams() ? `
               <button type="button" class="btn btn-sm btn-primary" onclick="window.app.jumpToGradeStudent('${s.id}')">
                 🚀 Cargar
@@ -1215,6 +1394,87 @@
       });
 
       tableBody.innerHTML = html;
+    }
+
+    // --- EDICIÓN DE DATOS DEL ESTUDIANTE (SOLO DIRECCIÓN) ---
+
+    openStudentEdit(studentId) {
+      const ds = window.DataService;
+      if (!ds.isAdmin()) {
+        this.showToast('Solo Dirección puede modificar los datos de un estudiante.', 'warning');
+        return;
+      }
+      const student = ds.getStudentById(studentId);
+      if (!student) return;
+      const orig = ds.getOriginalStudentData(studentId);
+      const override = ds.getStudentOverride(studentId);
+      const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+      this.editingStudentId = studentId;
+      document.getElementById('studentEditTitle').textContent = `✏️ ${student.apellido}, ${student.nombre}`;
+      document.getElementById('studentEditSubtitle').textContent = override
+        ? `ID ${student.id} • Datos corregidos por ${override.actualizadoPor} el ${new Date(override.actualizadoEn).toLocaleString('es-AR')}`
+        : `ID ${student.id} • Datos originales del padrón de inscripción`;
+      document.getElementById('studentEditFields').innerHTML = ds.getStudentEditableFields().map(f => {
+        const changed = override && override.campos && override.campos[f.key] !== undefined;
+        return `
+          <div class="student-edit-field ${changed ? 'changed' : ''}">
+            <label for="sef_${f.key}">${f.label}${f.required ? ' *' : ''}</label>
+            <input type="${f.key === 'email' ? 'email' : 'text'}" id="sef_${f.key}" data-key="${f.key}" class="form-control-auth"
+              value="${esc(student[f.key])}" ${f.required ? 'required' : ''} ${f.key === 'dni' || f.key === 'cuil' ? 'inputmode="numeric"' : ''} autocomplete="off">
+            ${changed ? `<span class="student-edit-orig">Original: ${esc(orig[f.key]) || '(vacío)'}</span>` : ''}
+          </div>`;
+      }).join('');
+      document.getElementById('studentEditError').style.display = 'none';
+      document.getElementById('btnStudentEditRestore').style.display = override ? '' : 'none';
+      document.getElementById('modalStudentEdit').classList.add('active');
+      const first = document.getElementById('sef_apellido');
+      if (first) first.focus();
+    }
+
+    closeStudentEdit() {
+      this.editingStudentId = null;
+      document.getElementById('modalStudentEdit').classList.remove('active');
+    }
+
+    async saveStudentEdit(e) {
+      if (e) e.preventDefault();
+      const studentId = this.editingStudentId;
+      if (!studentId) return;
+      const changes = {};
+      document.querySelectorAll('#studentEditFields input[data-key]').forEach(inp => {
+        changes[inp.getAttribute('data-key')] = inp.value;
+      });
+      const btn = document.getElementById('btnStudentEditSave');
+      const errorBox = document.getElementById('studentEditError');
+      btn.disabled = true;
+      errorBox.style.display = 'none';
+      try {
+        const res = await window.DataService.updateStudentInfo(studentId, changes);
+        const st = window.DataService.getStudentById(studentId);
+        this.closeStudentEdit();
+        this.showToast(`✅ Datos de ${st.apellido}, ${st.nombre} actualizados${res.dniChanged ? ' (el resultado publicado pasó al DNI nuevo)' : ''}. Sus notas se mantienen.`, 'success');
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async restoreStudentEdit() {
+      const studentId = this.editingStudentId;
+      if (!studentId) return;
+      if (!confirm('¿Volver a los datos originales del padrón de inscripción para este estudiante?\n\nSus notas y correcciones se mantienen.')) return;
+      try {
+        await window.DataService.restoreStudentInfo(studentId);
+        this.closeStudentEdit();
+        this.showToast('↩ Se restauraron los datos originales del estudiante. Sus notas se mantienen.', 'success');
+      } catch (err) {
+        const errorBox = document.getElementById('studentEditError');
+        errorBox.textContent = err.message;
+        errorBox.style.display = 'block';
+      }
     }
 
     // --- VISTA DE EXPORTACIÓN ---
@@ -1378,6 +1638,17 @@
         this.showToast(`📤 Resultados publicados para ${count} estudiantes`, 'success');
       } catch (err) {
         this.showToast(`Error al publicar resultados: ${err.message}`, 'danger');
+      }
+    }
+
+    async sendPdlRoster() {
+      if (!confirm('¿Enviar el padrón de la 2da instancia (los estudiantes que pasan)?\n\nSe usa para PdL 16/10, Matemática 23/10 y PdL 30/10. Los profesores de PdL verán apellido, nombre, DNI y la fecha de su examen. Las correcciones y el presentismo ya registrados se conservan.')) return;
+      try {
+        const alumnos = await window.DataService.publishPdlRoster();
+        const n1610 = alumnos.filter(a => a.fecha === '16-10').length;
+        this.showToast(`📖 Padrón de la 2da instancia enviado: ${alumnos.length} para Matemática 23/10; PdL ${n1610} el 16/10 y ${alumnos.length - n1610} el 30/10`, 'success');
+      } catch (err) {
+        this.showToast(`Error al enviar el padrón de la 2da instancia: ${err.message}`, 'danger');
       }
     }
 
@@ -1725,7 +1996,7 @@
         if (navBtnEstadisticas) navBtnEstadisticas.style.display = 'none';
         if (navBtnExportar) navBtnExportar.style.display = 'none';
 
-        if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar'].includes(this.currentTab) ||
+        if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar', 'general'].includes(this.currentTab) ||
             (!cargaAbierta && ['carga', 'mi-progreso'].includes(this.currentTab))) {
           this.switchTab(cargaAbierta ? 'mi-progreso' : 'asistencia');
         }
@@ -1808,12 +2079,7 @@
       }
 
       if (q) {
-        list = list.filter(item => {
-          const s = item.student;
-          return s.apellido.toLowerCase().includes(q) ||
-                 s.nombre.toLowerCase().includes(q) ||
-                 String(s.dni).includes(q);
-        });
+        list = list.filter(item => window.DataService.studentMatchesSearch(item.student, q));
       }
 
       const countBadge = document.getElementById('myProgressCountBadge');
@@ -2071,11 +2337,7 @@
       }
 
       if (q) {
-        students = students.filter(s => {
-          return s.apellido.toLowerCase().includes(q) ||
-                 s.nombre.toLowerCase().includes(q) ||
-                 String(s.dni).includes(q);
-        });
+        students = students.filter(s => window.DataService.studentMatchesSearch(s, q));
       }
 
       if (selectedStatus !== 'all') {
@@ -2275,6 +2537,12 @@
 
     renderAll() {
       this.updateSyncButtonState();
+      // Si Dirección corrigió el aula o la escuela de algún estudiante, actualizar los filtros
+      if (this._overridesVersionSeen !== window.DataService.studentOverridesVersion) {
+        this._overridesVersionSeen = window.DataService.studentOverridesVersion;
+        this.populateClassroomFilters();
+        this.populateSchoolFilters();
+      }
       if (this.currentTab === 'asistencia') {
         this.renderAsistenciaView();
       } else if (this.currentTab === 'carga') {
@@ -2294,6 +2562,8 @@
         this.renderStudentsDirectory();
       } else if (this.currentTab === 'exportar') {
         this.renderExportView();
+      } else if (this.currentTab === 'general') {
+        this.renderGeneralView();
       }
     }
 
