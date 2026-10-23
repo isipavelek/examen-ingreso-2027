@@ -22,6 +22,7 @@
     init() {
       this.setupEventListeners();
       this.bindKeyboardShortcuts();
+      this.renderTeacherChips();
       this.populateClassroomFilters();
       this.populateSchoolFilters();
 
@@ -195,6 +196,22 @@
 
     // --- AUTENTICACIÓN FIREBASE AUTH ---
 
+    // Accesos rápidos de los profesores de la 2da instancia (los que todavía no tienen cuenta cargada no aparecen)
+    renderTeacherChips() {
+      const box = document.getElementById('teacherAccountChips');
+      const cfg = window.PDL_CONFIG;
+      if (!box || !cfg) return;
+      const profes = [
+        ...(cfg.profesores || []).map(p => ({ ...p, materia: 'PdL', icono: '📖' })),
+        ...(cfg.profesoresMat || []).map(p => ({ ...p, materia: 'Matemática', icono: '📐' }))
+      ].filter(p => p.email && !/^(PDL|MAT)_PROF_/.test(p.uid));
+      box.innerHTML = profes.map(p => `
+        <button type="button" class="account-chip" data-email="${p.email}">${p.icono} ${p.name} (${p.materia})</button>`).join('');
+      box.querySelectorAll('.account-chip').forEach(btn => {
+        btn.addEventListener('click', () => this.fillLoginEmail(btn.getAttribute('data-email')));
+      });
+    }
+
     fillLoginEmail(email) {
       const emailInput = document.getElementById('authEmailInput');
       const passInput = document.getElementById('authPasswordInput');
@@ -261,8 +278,8 @@
 
       // Dirección puede llegar al Resumen general desde otra instancia (#general); con la carga cerrada,
       // el resto del personal entra a la toma de lista de los encuentros
-      if (profile.isAdmin && window.location.hash === '#general') {
-        this.switchTab('general');
+      if (profile.isAdmin && ['#general', '#merito'].includes(window.location.hash)) {
+        this.switchTab(window.location.hash.slice(1));
       } else if (window.DataService.isCargaCerrada()) {
         this.switchTab('asistencia');
       } else if (!profile.isAdmin) {
@@ -287,7 +304,7 @@
       const isAd = window.DataService.isAdmin();
 
       // Bloquear accesos directos o no autorizados a preceptores
-      if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar', 'general'].includes(tabName) && !isAd) {
+      if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar', 'general', 'merito'].includes(tabName) && !isAd) {
         this.showToast('Acceso restringido: Esta sección es exclusiva de Dirección y Vicedirección.', 'warning');
         return;
       }
@@ -328,6 +345,8 @@
         this.renderExportView();
       } else if (tabName === 'general') {
         this.renderGeneralView();
+      } else if (tabName === 'merito') {
+        this.renderMeritoView();
       }
     }
 
@@ -341,20 +360,186 @@
         return;
       }
       window.InstanciasCore.renderInstanceBar(bar, {
-        active: this.currentTab === 'general' ? 'general' : '02-10',
+        active: ['general', 'merito'].includes(this.currentTab) ? this.currentTab : '02-10',
         isAdmin: true,
         onSelect: id => {
-          if (id === 'general') {
-            this.switchTab('general');
+          if (id === 'general' || id === 'merito') {
+            this.switchTab(id);
             return true;
           }
           if (id === '02-10') {
-            if (this.currentTab === 'general') this.switchTab('monitor-preceptores');
+            if (['general', 'merito'].includes(this.currentTab)) this.switchTab('monitor-preceptores');
             return true;
           }
           return false;
         }
       });
+    }
+
+    // --- ORDEN DE MÉRITO DEL INGRESO (DIRECCIÓN) ---
+
+    getMerito() {
+      const ds = window.DataService;
+      const { roster, grades, matGrades, meritoDecisiones } = ds.instancias;
+      return window.InstanciasCore.ordenDeMerito({
+        roster,
+        pdlGrades: grades,
+        matGrades,
+        asistencia: window.InstanciasCore.asistenciaPorInstancia(ds.encuentroAttendance),
+        decisiones: meritoDecisiones
+      });
+    }
+
+    renderMeritoView() {
+      const res = this.getMerito();
+      const ds = window.DataService;
+      const roster = ds.instancias.roster;
+      // Todas las cifras decimales de la nota (son exactas: múltiplos de 1/80)
+      const full = n => (typeof n === 'number') ? String(Number(n.toFixed(6))).replace('.', ',') : '-';
+      const kpi = (icon, value, label, color) => `
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(59, 130, 246, 0.12);">${icon}</div>
+          <div class="kpi-data"><span class="kpi-value" ${color ? `style="color: ${color};"` : ''}>${value}</span><span class="kpi-label">${label}</span></div>
+        </div>`;
+      document.getElementById('meritoKpis').innerHTML =
+        kpi('🎯', res.cupo, 'Lugares (cupo)') +
+        kpi('📋', `${res.completos} / ${roster.length}`, 'Con las dos notas') +
+        kpi('⏳', res.incompletos, 'Les falta alguna nota', res.incompletos ? '#fbbf24' : null) +
+        kpi('✂️', full(res.corte), 'Promedio de corte (lugar ' + res.cupo + ')') +
+        kpi('⚖️', res.empatados ? `${res.empatados} → ${res.lugaresEmpate}` : '0', 'Empatados en el corte → lugares', res.faltaDecidir ? '#f87171' : null) +
+        kpi('🎓', res.ingresan, 'Ingresan', '#34d399');
+
+      const alerts = [];
+      if (roster.length === 0) alerts.push('<div class="merito-alert warn">📋 Todavía no hay padrón de la 2da instancia: envialo desde Actas y Exportación.</div>');
+      if (res.incompletos > 0) alerts.push(`<div class="merito-alert warn">⚠️ Orden <strong>provisorio</strong>: a ${res.incompletos} estudiante(s) les falta corregir PdL o Matemática. Todos tienen que estar evaluados en las dos materias.</div>`);
+      if (res.ausentes > 0) alerts.push(`<div class="merito-alert warn">🚫 ${res.ausentes} estudiante(s) estuvieron ausentes en algún examen de desarrollo: no tienen las dos notas y figuran como <strong>no ingresa</strong>.</div>`);
+      if (res.faltaDecidir) alerts.push(`<div class="merito-alert danger">⚖️ Hay <strong>${res.empatados} estudiantes empatados</strong> con promedio ${full(res.corte)} para <strong>${res.lugaresEmpate} lugar(es)</strong>. Elegí en la tabla quiénes ingresan (elegidos: ${res.elegidos} de ${res.lugaresEmpate}).</div>`);
+      if (res.excedido) alerts.push(`<div class="merito-alert danger">❗ Elegiste ${res.elegidos} estudiantes para ${res.lugaresEmpate} lugar(es) del empate: desmarcá a alguno.</div>`);
+      if (!res.faltaDecidir && !res.excedido && res.empatados > 0) alerts.push(`<div class="merito-alert ok">✅ Empate resuelto por Dirección: ${res.elegidos} de ${res.empatados} empatados ingresan.</div>`);
+      document.getElementById('meritoAlerts').innerHTML = alerts.join('');
+
+      // Publicación de la condición final para las familias
+      const pub = ds.instancias.meritoPublicacion;
+      const pubBox = document.getElementById('meritoPublicacion');
+      pubBox.className = `merito-alert ${pub ? 'ok' : (res.listoParaPublicar ? 'ok' : 'warn')}`;
+      pubBox.innerHTML = `
+        <div class="merito-pub-row">
+          <div>${pub
+            ? `📤 Condición final <strong>publicada</strong> el ${new Date(pub.en).toLocaleString('es-AR')} por ${pub.por}: ${pub.ingresan} ingresan de ${pub.cantidad}. Si cambia algo, republicá.`
+            : (res.listoParaPublicar
+              ? '🟢 Todo corregido y sin empates por resolver: ya se puede publicar la condición final para las familias.'
+              : '⏳ La condición final se puede publicar cuando estén todas las notas corregidas y el empate resuelto. Mientras tanto las familias ven "Condición final: pendiente".')}</div>
+          <div class="merito-pub-actions">
+            <button type="button" class="btn btn-primary btn-sm" onclick="window.app.publishIngreso()" ${res.listoParaPublicar ? '' : 'disabled'}>${pub ? '🔄 Republicar' : '📤 Publicar condición final'}</button>
+            ${pub ? '<button type="button" class="btn btn-danger btn-sm" onclick="window.app.unpublishIngreso()">🚫 Retirar</button>' : ''}
+          </div>
+        </div>`;
+
+      const q = document.getElementById('meritoSearch').value || '';
+      const filtro = document.getElementById('meritoFilter').value;
+      const grupo = { ingresa: 'ingresan', ingresa_dir: 'ingresan', no_ingresa: 'no_ingresan', no_ingresa_dir: 'no_ingresan', ausente: 'no_ingresan', empate: 'empate', incompleto: 'incompletos' };
+      const filas = res.filas.filter(f => (filtro === 'all' || grupo[f.estado] === filtro || (filtro === 'empate' && ['empate', 'ingresa_dir', 'no_ingresa_dir'].includes(f.estado)))
+        && ds.studentMatchesSearch(f.st, q));
+      document.getElementById('meritoCount').textContent = `${filas.length} estudiantes`;
+
+      const ESTADO = {
+        ingresa: '<span class="status-pill pill-success">🎓 Ingresa</span>',
+        ingresa_dir: '<span class="status-pill pill-success">🎓 Ingresa (Dirección)</span>',
+        no_ingresa: '<span class="status-pill pill-danger">No ingresa</span>',
+        no_ingresa_dir: '<span class="status-pill pill-danger">No ingresa (Dirección)</span>',
+        empate: '<span class="status-pill pill-warning">⚖️ Empate: decide Dirección</span>',
+        incompleto: '<span class="status-pill pill-neutral">⏳ Falta corregir</span>',
+        ausente: '<span class="status-pill pill-danger">No ingresa (ausente)</span>'
+      };
+      const FALTA = { pendiente: 'Por corregir', en_progreso: 'En corrección', ausente: 'Ausente' };
+      const notaCell = (nota, estado) => (typeof nota === 'number') ? `<strong>${full(nota)}</strong>` : `<span class="text-muted">${FALTA[estado] || '-'}</span>`;
+      let corteMostrado = false;
+      document.getElementById('meritoTableBody').innerHTML = filas.map(f => {
+        let sep = '';
+        if (!corteMostrado && res.corte !== null && f.completo && f.promedio < res.corte && filtro === 'all') {
+          corteMostrado = true;
+          sep = `<tr class="merito-corte"><td colspan="8">✂️ Corte: lugar ${res.cupo} · promedio ${full(res.corte)}</td></tr>`;
+        }
+        const enEmpate = ['empate', 'ingresa_dir', 'no_ingresa_dir'].includes(f.estado);
+        const decision = enEmpate ? `
+          <div class="merito-decision">
+            <button type="button" class="btn btn-sm ${f.estado === 'ingresa_dir' ? 'btn-primary' : 'btn-secondary'}" onclick="window.app.setMeritoDecision('${f.st.id}', ${f.estado === 'ingresa_dir' ? 'null' : 'true'})">Ingresa</button>
+            <button type="button" class="btn btn-sm ${f.estado === 'no_ingresa_dir' ? 'btn-danger' : 'btn-secondary'}" onclick="window.app.setMeritoDecision('${f.st.id}', ${f.estado === 'no_ingresa_dir' ? 'null' : 'false'})">No ingresa</button>
+          </div>` : '';
+        return sep + `
+          <tr class="${enEmpate ? 'merito-empate' : ''}">
+            <td class="text-center"><strong>${f.puesto || '-'}</strong></td>
+            <td><strong>${f.st.apellido}, ${f.st.nombre}</strong></td>
+            <td>${f.st.dni}</td>
+            <td class="text-center">${notaCell(f.pdl, f.pdlEstado)} <span class="fecha-badge">${(f.st.fecha || '').replace('-', '/')}</span></td>
+            <td class="text-center">${notaCell(f.mat, f.matEstado)}</td>
+            <td class="text-center">${f.completo ? `<strong style="font-size: 1.02rem;">${full(f.promedio)}</strong>` : '-'}</td>
+            <td class="text-center">${ESTADO[f.estado]}</td>
+            <td class="text-end">${decision}</td>
+          </tr>`;
+      }).join('') || '<tr><td colspan="8" class="text-center text-muted" style="padding: 2rem;">No hay estudiantes con esos filtros.</td></tr>';
+    }
+
+    async publishIngreso() {
+      const res = this.getMerito();
+      if (!res.listoParaPublicar) {
+        this.showToast('Todavía no se puede publicar: faltan notas por corregir o el empate sin resolver.', 'warning');
+        return;
+      }
+      const items = res.filas.map(f => ({ dni: String(f.st.dni).replace(/\D/g, ''), ingresa: f.estado === 'ingresa' || f.estado === 'ingresa_dir' }));
+      const n = items.filter(it => it.ingresa).length;
+      if (!confirm(`¿Publicar la condición final del ingreso?\n\n${n} estudiantes INGRESAN y ${items.length - n} no ingresan.\nCada familia lo verá con el DNI en el Resumen, con el mensaje correspondiente.`)) return;
+      try {
+        await window.FirebaseSyncService.publishIngreso(items);
+        this.showToast(`📤 Condición final publicada: ${n} ingresan`, 'success');
+      } catch (err) {
+        this.showToast(`Error al publicar la condición final: ${err.message}`, 'danger');
+      }
+    }
+
+    async unpublishIngreso() {
+      if (!confirm('¿Retirar la condición final publicada?\n\nLas familias vuelven a ver "Condición final: pendiente".')) return;
+      try {
+        const items = window.DataService.instancias.roster.map(r => ({ dni: String(r.dni).replace(/\D/g, '') }));
+        await window.FirebaseSyncService.publishIngreso(items, { retirar: true });
+        this.showToast('Condición final retirada', 'success');
+      } catch (err) {
+        this.showToast(`Error al retirar la condición final: ${err.message}`, 'danger');
+      }
+    }
+
+    async setMeritoDecision(studentId, ingresa) {
+      try {
+        const decisiones = { ...window.DataService.instancias.meritoDecisiones };
+        if (ingresa === null) delete decisiones[studentId];
+        else decisiones[studentId] = ingresa;
+        window.DataService.setInstanciasData({ meritoDecisiones: decisiones });
+        await window.FirebaseSyncService.pushMeritoDecision(studentId, ingresa);
+      } catch (err) {
+        this.showToast(`No se pudo guardar la decisión: ${err.message}`, 'danger');
+      }
+    }
+
+    exportMerito() {
+      if (typeof XLSX === 'undefined') {
+        this.showToast('No se pudo cargar el generador de Excel. Revisá la conexión a internet y recargá la página.', 'danger');
+        return;
+      }
+      const res = this.getMerito();
+      const SIT = { ingresa: 'Ingresa', ingresa_dir: 'Ingresa (decisión de Dirección)', no_ingresa: 'No ingresa', no_ingresa_dir: 'No ingresa (decisión de Dirección)', empate: 'Empate: falta decidir', incompleto: 'Falta corregir', ausente: 'No ingresa (ausente en un examen)' };
+      const aoa = [
+        ['EST UTN San Miguel - Ingreso 2027 - Orden de mérito'],
+        [`Promedio de PdL y Matemática con todos los decimales. Ingresan ${res.cupo}.${res.incompletos ? ` PROVISORIO: ${res.incompletos} sin las dos notas.` : ''}`],
+        [],
+        ['Puesto', 'Apellido', 'Nombre', 'DNI', 'Fecha PdL', 'Nota PdL', 'Nota Matemática', 'Promedio', 'Situación']
+      ];
+      res.filas.forEach(f => aoa.push([f.puesto || '', f.st.apellido, f.st.nombre, String(f.st.dni), (f.st.fecha || '').replace('-', '/'),
+        f.pdl ?? '', f.mat ?? '', f.promedio ?? '', SIT[f.estado]]));
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{ wch: 7 }, { wch: 24 }, { wch: 26 }, { wch: 11 }, { wch: 9 }, { wch: 9 }, { wch: 14 }, { wch: 11 }, { wch: 32 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Orden de mérito');
+      XLSX.writeFile(wb, `Orden_de_merito_Ingreso_2027_${new Date().toISOString().slice(0, 10)}.xlsx`);
     }
 
     // --- RESUMEN GENERAL DE TODAS LAS INSTANCIAS (DIRECCIÓN) ---
@@ -363,7 +548,7 @@
     getGeneralRows() {
       const ds = window.DataService;
       const core = window.InstanciasCore;
-      const { roster, grades } = ds.instancias;
+      const { roster, grades, matGrades } = ds.instancias;
       const asistencia = core.asistenciaPorInstancia(ds.encuentroAttendance); // toma de lista de los encuentros
       const rosterById = new Map(roster.map(r => [r.id, r]));
       return ds.getConsolidatedResults().map(item => {
@@ -372,6 +557,9 @@
         const g = grades[item.student.id] || null;
         const pdlAtt = pdlFecha ? (asistencia[pdlFecha] || {})[item.student.id] : null;
         const pdlEstado = pdlFecha ? core.estadoPdl(g, pdlAtt) : null;
+        const mg = (matGrades && matGrades[item.student.id]) || null;
+        const matAtt = (asistencia['23-10'] || {})[item.student.id];
+        const matEstado = r ? core.estadoGrade(mg, matAtt) : null;
         return {
           item,
           enPadron: !!r,
@@ -379,7 +567,9 @@
           pdlPresencia: pdlFecha ? core.presencia(pdlFecha, g, pdlAtt) : null,
           pdlEstado,
           pdlNota: (g && pdlEstado === 'corregido') ? g.nota : null,
-          matPresencia: r ? core.presencia('23-10', null, (asistencia['23-10'] || {})[item.student.id]) : null
+          matPresencia: r ? core.presencia('23-10', mg, matAtt) : null,
+          matEstado,
+          matNota: (mg && matEstado === 'corregido') ? mg.nota : null
         };
       });
     }
@@ -412,12 +602,8 @@
         const presentes = conv.filter(r => pres(r) === 'presente').length;
         const ausentes = conv.filter(r => pres(r) === 'ausente').length;
         const metrics = [['Convocados', conv.length], ['Presentes', presentes], ['Ausentes', ausentes], ['Sin registrar', conv.length - presentes - ausentes]];
-        if (inst.tipo === 'pdl') {
-          const notas = conv.map(r => r.pdlNota).filter(n => typeof n === 'number');
-          metrics.push(['Corregidos', notas.length], ['Promedio', fmt(avg(notas))]);
-        } else {
-          metrics.push(['Corrección pendiente', '–'], ['Promedio', '-']);
-        }
+        const notas = conv.map(r => (inst.tipo === 'mat' ? r.matNota : r.pdlNota)).filter(n => typeof n === 'number');
+        metrics.push(['Corregidos', notas.length], ['Promedio', fmt(avg(notas))]);
         cards.push({
           inst,
           metrics,
@@ -454,16 +640,18 @@
         ['Pasan a 2da instancia', pasan],
         ['Presentes PdL (16/10 y 30/10)', rows.filter(r => r.pdlPresencia === 'presente').length],
         ['PdL corregidos', rows.filter(r => typeof r.pdlNota === 'number').length],
-        ['Presentes Matemática 23/10', rows.filter(r => r.matPresencia === 'presente').length]
+        ['Presentes Matemática 23/10', rows.filter(r => r.matPresencia === 'presente').length],
+        ['Matemática corregidos', rows.filter(r => typeof r.matNota === 'number').length]
       ];
       document.getElementById('generalFunnel').innerHTML = funnel.map(([l, v]) => hbar(l, v, total, String(v))).join('');
 
       const notasPdl = fecha => rows.filter(r => r.pdlFecha === fecha).map(r => r.pdlNota).filter(n => typeof n === 'number');
-      const promedios = [['2/10 nota final', notas210], ['PdL 16/10', notasPdl('16-10')], ['PdL 30/10', notasPdl('30-10')]];
+      const notasMat = rows.map(r => r.matNota).filter(n => typeof n === 'number');
+      const promedios = [['2/10 nota final', notas210], ['PdL 16/10', notasPdl('16-10')], ['Matemática 23/10', notasMat], ['PdL 30/10', notasPdl('30-10')]];
       document.getElementById('generalAverages').innerHTML = promedios.map(([l, arr]) => {
         const a = avg(arr);
         return hbar(`${l} (${arr.length})`, a || 0, 10, fmt(a));
-      }).join('') + '<div class="text-muted" style="font-size: 0.75rem; margin-top: 0.5rem;">Matemática 23/10 se suma cuando se cargue su corrección.</div>';
+      }).join('') + '<div class="text-muted" style="font-size: 0.75rem; margin-top: 0.5rem;">No hay nota de aprobación por examen: ingresan los mejores ' + ((window.PDL_CONFIG.ingreso || {}).cupo || 81) + ' según el promedio de PdL y Matemática (🏆 Orden de mérito).</div>';
 
       this.renderGeneralTable(rows);
     }
@@ -491,9 +679,10 @@
         const st = r.item.student;
         const cond = r.item.pasa === true ? '<span class="status-pill pill-success">Pasa</span>'
           : (r.item.pasa === false ? '<span class="status-pill pill-danger">No pasa</span>' : '<span class="status-pill pill-warning">Pendiente</span>');
-        let pdlNota = '-';
-        if (r.pdlEstado === 'corregido') pdlNota = `<strong>${fmt(r.pdlNota)}</strong>`;
-        else if (r.pdlEstado && r.pdlEstado !== 'ausente') pdlNota = '<span class="text-muted">En corrección</span>';
+        // Sin nota todavía: 'Por corregir' (no empezada) o 'En corrección' (a medias)
+        const sinNota = estado => ({ pendiente: '<span class="text-muted">Por corregir</span>', en_progreso: '<span class="text-muted">En corrección</span>' }[estado] || '-');
+        const pdlNota = r.pdlEstado === 'corregido' ? `<strong>${fmt(r.pdlNota)}</strong>` : sinNota(r.pdlEstado);
+        const matNota = r.matEstado === 'corregido' ? `<strong>${fmt(r.matNota)}</strong>` : sinNota(r.matEstado);
         return `
           <tr>
             <td><strong>${st.apellido}, ${st.nombre}</strong></td>
@@ -505,6 +694,7 @@
             <td class="text-center">${presPill(r.pdlPresencia)}</td>
             <td class="text-center">${pdlNota}</td>
             <td class="text-center">${presPill(r.matPresencia)}</td>
+            <td class="text-center">${matNota}</td>
           </tr>`;
       }).join('');
     }
@@ -1996,7 +2186,7 @@
         if (navBtnEstadisticas) navBtnEstadisticas.style.display = 'none';
         if (navBtnExportar) navBtnExportar.style.display = 'none';
 
-        if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar', 'general'].includes(this.currentTab) ||
+        if (['monitor-preceptores', 'auditoria', 'estadisticas', 'exportar', 'general', 'merito'].includes(this.currentTab) ||
             (!cargaAbierta && ['carga', 'mi-progreso'].includes(this.currentTab))) {
           this.switchTab(cargaAbierta ? 'mi-progreso' : 'asistencia');
         }
@@ -2564,6 +2754,8 @@
         this.renderExportView();
       } else if (this.currentTab === 'general') {
         this.renderGeneralView();
+      } else if (this.currentTab === 'merito') {
+        this.renderMeritoView();
       }
     }
 

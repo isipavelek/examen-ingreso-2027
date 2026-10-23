@@ -7,7 +7,7 @@
   <meta name="description" content="Sistema de evaluación, doble carga cruzada, analíticas y gestión del examen de ingreso a 1.er año 2027 de la Escuela Secundaria Técnica UTN San Miguel.">
 
   <!-- Hojas de estilo y tipografías -->
-  <link rel="stylesheet" href="../css/styles.css?v=2027.13">
+  <link rel="stylesheet" href="../css/styles.css?v=2027.15">
 
   <!-- Firebase SDK Compat Oficial -->
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -68,12 +68,8 @@
           <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('emilia.caspani@inspt.utn.edu.ar')">
             👩‍🏫 Emilia
           </button>
-          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('matias.demaro@inspt.utn.edu.ar')">
-            📖 Matias Demaro (PdL)
-          </button>
-          <button type="button" class="account-chip" onclick="window.app.fillLoginEmail('alexis.tagliavini@inspt.utn.edu.ar')">
-            📖 Alexis Tagliavini (PdL)
-          </button>
+          <!-- Profesores de PdL y Matemática: se agregan desde data/pdlConfig.js (app.renderTeacherChips) -->
+          <span id="teacherAccountChips" style="display: contents;"></span>
         </div>
 
         <form id="firebaseLoginForm" onsubmit="window.app.handleFirebaseLogin(event)">
@@ -866,6 +862,52 @@
   </main>
 
   <!-- ==========================================================================
+       ORDEN DE MÉRITO DEL INGRESO (DIRECCIÓN)
+       ========================================================================== -->
+  <main id="view-merito" class="view-section">
+    <div class="audit-toolbar">
+      <div>
+        <h2 style="font-size: 1.2rem; margin-bottom: 0.2rem;">🏆 Orden de mérito del Ingreso 2027</h2>
+        <small class="text-muted">Promedio de Prácticas del Lenguaje (16/10 o 30/10) y Matemática (23/10) con todos los decimales. No hay nota de aprobación por examen: ingresan los primeros del orden. Si hay empate en el último lugar, decide Dirección.</small>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.exportMerito()">📥 Planilla Excel</button>
+    </div>
+    <div class="kpi-cards-grid" id="meritoKpis"></div>
+    <div id="meritoAlerts"></div>
+    <div id="meritoPublicacion"></div>
+    <div class="audit-toolbar">
+      <div class="filter-group">
+        <input type="text" id="meritoSearch" class="form-control-search" style="width: 260px;" placeholder="Buscar estudiante o DNI..." oninput="window.app.renderMeritoView()">
+        <select id="meritoFilter" class="form-select-sm" style="width: 230px;" onchange="window.app.renderMeritoView()">
+          <option value="all">Todos (orden completo)</option>
+          <option value="ingresan">Ingresan</option>
+          <option value="empate">Empatados en el corte</option>
+          <option value="no_ingresan">No ingresan</option>
+          <option value="incompletos">Falta corregir</option>
+        </select>
+      </div>
+      <div id="meritoCount" class="badge-role" style="color: var(--color-accent);">-</div>
+    </div>
+    <div class="table-responsive" style="overflow-x: auto;">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th class="text-center">Puesto</th>
+            <th>Estudiante</th>
+            <th>DNI</th>
+            <th class="text-center">PdL (fecha)</th>
+            <th class="text-center">Matemática</th>
+            <th class="text-center">Promedio</th>
+            <th class="text-center">Situación</th>
+            <th class="text-end">Decisión de Dirección</th>
+          </tr>
+        </thead>
+        <tbody id="meritoTableBody"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- ==========================================================================
        RESUMEN GENERAL DE TODAS LAS INSTANCIAS (DIRECCIÓN)
        ========================================================================== -->
   <main id="view-general" class="view-section">
@@ -919,6 +961,7 @@
             <th class="text-center">PdL Asistencia</th>
             <th class="text-center">PdL Nota</th>
             <th class="text-center">Mat. 23/10 Asistencia</th>
+            <th class="text-center">Mat. 23/10 Nota</th>
           </tr>
         </thead>
         <tbody id="generalTableBody"></tbody>
@@ -1252,13 +1295,13 @@
 
   <!-- Carga de Datos y Scripts de la Aplicación -->
   <script src="../data/examConfig.js?v=2027.10"></script>
-  <script src="../data/pdlConfig.js?v=2027.4"></script>
-  <script src="../js/instancias-core.js?v=2027.2"></script>
+  <script src="../data/pdlConfig.js?v=2027.8"></script>
+  <script src="../js/instancias-core.js?v=2027.6"></script>
   <script src="../data/students.js?v=2027.4"></script>
-  <script src="../js/firebase-sync.js?v=2027.11"></script>
-  <script src="../js/data-service.js?v=2027.15"></script>
+  <script src="../js/firebase-sync.js?v=2027.14"></script>
+  <script src="../js/data-service.js?v=2027.18"></script>
   <script src="../js/analytics.js?v=2027.7"></script>
   <script src="../js/audit.js?v=2027.5"></script>
-  <script src="../js/app.js?v=2027.14"></script>
+  <script src="../js/app.js?v=2027.18"></script>
 </body>
 </html>

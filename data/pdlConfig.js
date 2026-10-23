@@ -1,15 +1,60 @@
 /**
- * Corrección del Examen de Prácticas del Lenguaje (16/10 y 30/10) - Ingreso 2027
- * Rúbrica oficial (Examen 16-10/Rúbrica.pdf) y cuentas de los profesores de PdL.
+ * Segunda instancia del Ingreso 2027: PdL 16/10 y 30/10, Matemática 23/10.
+ * Rúbricas oficiales (Examen 16-10/Rúbrica.pdf y Examen 23-10/..._Criterios.pdf) y cuentas de los profesores.
+ * Las respuestas esperadas NO van acá (el sitio y el repositorio son públicos): Dirección las sube a
+ * Firebase desde Publicación (ver 'Examen 23-10/respuestas_matematica.json', fuera del repositorio).
  */
 window.PDL_CONFIG = {
-  // Profesores de PdL: solo acceden a la corrección de PdL (EST/pdl.html).
+  // Profesores de PdL: solo acceden a la corrección de PdL (EST/instancias.html).
   // Crear cada cuenta en Firebase Console > Authentication, copiar su UID acá
   // y también en firestore.rules (función isProfesorPdl).
   profesores: [
     { uid: "unXa7nmvUUaO6m4TWyVS57sh6Bu2", name: "Matias Demaro", email: "matias.demaro@inspt.utn.edu.ar", color: "#a855f7" },
     { uid: "gMq0OP0avdYqcU78JjE7SBH7uh23", name: "Alexis Tagliavini", email: "alexis.tagliavini@inspt.utn.edu.ar", color: "#ec4899" }
   ],
+
+  // Profesores de Matemática: solo acceden a la corrección de Matemática 23/10.
+  // Reemplazar cada UID, nombre y correo (y los UID en firestore.rules, función isProfesorMat).
+  // Las cuentas que todavía tienen el UID de ejemplo (MAT_PROF_...) no aparecen en el inicio de sesión.
+  profesoresMat: [
+    { uid: "Ek3ZgDKrRehA7fvvdf27LLGnb8o2", name: "Prof Mat1", email: "profmat1@gmail.com" },
+    { uid: "yNuJfF5xrrMaTyjqFvKvfYb0DR72", name: "Prof Mat2", email: "profmat2@gmail.com" },
+    { uid: "LBuXuiDLIyYhJX3FdoXHmWUcTYI3", name: "Prof Mat3", email: "profmat3@gmail.com" },
+    { uid: "AsE3I8RHS2bAK923LDkQnyNGnMH2", name: "Prof Mat4", email: "profmat4@gmail.com" },
+    { uid: "zrFqOLTgNOSWA3WBcqw9HHQ3Wfo2", name: "Prof Mat5", email: "profmat5@gmail.com" }
+  ],
+
+  // Ingreso: entran los mejores 'cupo' estudiantes según el promedio de PdL y Matemática (2da instancia).
+  // No hay nota de aprobación por examen. Si hay empate en el último lugar, decide Dirección.
+  ingreso: {
+    cupo: 81
+  },
+
+  // Matemática 23/10: cada ítem se califica B / B⁻ / R / M / NR sobre su puntaje.
+  // Nota del examen: suma exacta de los puntajes (se muestra con 2 decimales), de 1 a 10.
+  // 'tema' es lo evaluado en cada ejercicio (lo ven las familias); las consignas no se publican.
+  matematica: {
+    calificaciones: [
+      { id: "B", label: "B", nombre: "Bien", factor: 1, desc: "Planteo correcto, desarrollo coherente y resultado final correcto. También si lo resuelve bien con conceptos no vistos." },
+      { id: "B-", label: "B⁻", nombre: "Bien menos", factor: 0.75, desc: "Planteo y desarrollo correctos con errores menores de cálculo, o error de arrastre con procedimiento correcto." },
+      { id: "R", label: "R", nombre: "Regular", factor: 0.5, desc: "Planteo correcto al inicio pero incompleto, o con errores algebraicos o numéricos relevantes." },
+      { id: "M", label: "M", nombre: "Mal", factor: 0, desc: "Errores conceptuales graves, procedimiento incorrecto." },
+      { id: "NR", label: "NR", nombre: "No resuelve", factor: 0, desc: "En blanco, sin intento, o resultado sin ningún desarrollo ni justificación." }
+    ],
+    items: [
+      { id: "1a", ejercicio: "1", puntaje: 0.75, tema: "Operaciones combinadas con números naturales" },
+      { id: "1b", ejercicio: "1", puntaje: 0.75, tema: "Operaciones con fracciones" },
+      { id: "2a", ejercicio: "2", puntaje: 0.5, tema: "Múltiplos comunes" },
+      { id: "2b", ejercicio: "2", puntaje: 0.5, tema: "Porcentaje" },
+      { id: "3a", ejercicio: "3", puntaje: 0.75, tema: "Proporcionalidad directa" },
+      { id: "3b", ejercicio: "3", puntaje: 0.75, tema: "Proporcionalidad directa" },
+      { id: "4", ejercicio: "4", puntaje: 1, tema: "Ángulos" },
+      { id: "5", ejercicio: "5", puntaje: 1, tema: "Fracción de una cantidad (problema)" },
+      { id: "6", ejercicio: "6", puntaje: 1, tema: "Resolución de problemas con operaciones" },
+      { id: "7", ejercicio: "7", puntaje: 1, tema: "Perímetro de figuras" },
+      { id: "8", ejercicio: "8", puntaje: 2, tema: "Área y perímetro de figuras" }
+    ]
+  },
 
   // Instancias del ingreso. 'mc': examen múltiple choice (sistema del personal, EST/index.html);
   // 'pdl' y 'mat': segunda instancia (EST/instancias.html) para los que pasan. 'encuentroId' es el encuentro

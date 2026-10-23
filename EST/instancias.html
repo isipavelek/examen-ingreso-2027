@@ -6,7 +6,7 @@
   <title>Instancias del Ingreso | EST - UTN San Miguel</title>
   <meta name="description" content="Presentismo, corrección, resultados y estadísticas de la segunda instancia del ingreso 2027: PdL 16/10, Matemática 23/10 y PdL 30/10.">
 
-  <link rel="stylesheet" href="../css/styles.css?v=2027.13">
+  <link rel="stylesheet" href="../css/styles.css?v=2027.15">
 
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -50,6 +50,13 @@
     .level-top { display: flex; gap: 0.4rem; align-items: center; font-weight: 700; font-size: 0.9rem; }
     .level-desc { font-size: 0.72rem; color: var(--text-muted); line-height: 1.25; }
     .level-key { font-size: 0.65rem; border: 1px solid var(--border-subtle); border-radius: 4px; padding: 0 0.3rem; color: var(--text-dim); }
+    /* Matemática: calificación B / B⁻ / R / M / NR en botones cortos, en una sola fila */
+    .levels.compact .level-btn { flex: 1 1 64px; max-width: 120px; align-items: center; text-align: center; }
+    .levels.compact .level-top { font-size: 1rem; }
+    .levels.compact .level-desc { font-size: 0.68rem; }
+    .criterios-legend { font-size: 0.74rem; color: var(--text-muted); background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.55rem 0.75rem; margin-top: 0.4rem; line-height: 1.5; }
+    .criterios-legend b { color: var(--text-main); }
+    .item-guia .guia-dev { color: var(--text-dim); }
 
     .pdl-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.85rem 1.25rem; border-top: 1px solid var(--border-subtle); background: rgba(15, 23, 42, 0.6); }
     .hints { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.75rem; color: var(--text-muted); }
@@ -128,10 +135,10 @@
 
     <nav class="nav-tabs-wrapper" aria-label="Secciones de la instancia">
       <button class="nav-tab-btn" data-tab="presentismo" data-admin="1"><span>🙋</span> Presentismo</button>
-      <button class="nav-tab-btn" data-tab="correccion" data-tipo="pdl"><span>✏️</span> Corrección</button>
-      <button class="nav-tab-btn" data-tab="resultados" data-tipo="pdl"><span>📋</span> Resultados</button>
+      <button class="nav-tab-btn" data-tab="correccion" data-tipo="pdl,mat"><span>✏️</span> Corrección</button>
+      <button class="nav-tab-btn" data-tab="resultados" data-tipo="pdl,mat"><span>📋</span> Resultados</button>
       <button class="nav-tab-btn" data-tab="estadisticas"><span>📊</span> Estadísticas</button>
-      <button class="nav-tab-btn" data-tab="publicacion" data-tipo="pdl" data-admin="1"><span>📤</span> Publicación</button>
+      <button class="nav-tab-btn" data-tab="publicacion" data-tipo="pdl,mat" data-admin="1"><span>📤</span> Publicación</button>
     </nav>
 
     <div class="header-actions">
@@ -225,13 +232,7 @@
           <div id="lockNotice" class="lock-notice" style="display: none;"></div>
           <div id="itemsWrap" class="items-wrap"></div>
           <div class="pdl-footer">
-            <div class="hints">
-              <span><span class="key-badge">↑</span> <span class="key-badge">↓</span> ítem</span>
-              <span><span class="key-badge">1</span>–<span class="key-badge">4</span> nivel</span>
-              <span><span class="key-badge">0</span> 0 pts</span>
-              <span><span class="key-badge">A</span> <span class="key-badge">B</span> tema</span>
-              <span><span class="key-badge">Enter</span> terminar</span>
-            </div>
+            <div class="hints" id="kbdHints"></div>
             <div class="footer-actions">
               <button type="button" id="btnPrev" class="btn btn-secondary btn-sm">⬅ Anterior</button>
               <button type="button" id="btnFinish" class="btn btn-primary">✔ Terminar corrección (Enter)</button>
@@ -245,7 +246,7 @@
         <div class="scorecard-header"><span>Nota en vivo</span><span id="scProgress" style="font-size: 0.75rem; color: var(--color-accent);">0 / 14 ítems</span></div>
         <div class="score-big-display">
           <div class="score-number" id="scTotal">-</div>
-          <div class="score-max-label">de 10,00 puntos</div>
+          <div class="score-max-label" id="scMaxLabel">de 10,00 puntos</div>
           <div id="scEstado" class="score-badge badge-tema-pending">SIN CORREGIR</div>
         </div>
         <div class="subject-breakdown-box" id="scSections"></div>
@@ -259,12 +260,12 @@
     </div>
   </main>
 
-  <!-- RESULTADOS (PdL) -->
+  <!-- RESULTADOS (PdL y Matemática) -->
   <main id="view-resultados" class="view-section">
     <div class="page-title-row">
       <div>
         <h2 id="resTitle">📋 Resultados</h2>
-        <small>Nota por estudiante, por sección y estado de corrección</small>
+        <small id="resSubtitle">Nota por estudiante y estado de corrección</small>
       </div>
       <div class="toolbar-inline">
         <input type="text" id="resBuscar" class="form-control-search" placeholder="Buscar DNI, apellido o nombre..." autocomplete="off">
@@ -279,22 +280,7 @@
     </div>
     <div class="table-responsive" style="overflow-x: auto;">
       <table class="custom-table">
-        <thead>
-          <tr>
-            <th class="num" style="width: 45px;">#</th>
-            <th>Estudiante</th>
-            <th>DNI</th>
-            <th class="num">Presentismo</th>
-            <th class="num">Estado</th>
-            <th class="num">Tema</th>
-            <th class="num">A (/3)</th>
-            <th class="num">B (/3)</th>
-            <th class="num">C (/4)</th>
-            <th class="num">Nota (/10)</th>
-            <th>Corrector/a</th>
-            <th></th>
-          </tr>
-        </thead>
+        <thead id="resHead"></thead>
         <tbody id="resBody"></tbody>
       </table>
     </div>
@@ -309,16 +295,16 @@
       </div>
     </div>
     <div class="kpi-cards-grid" id="statsKpis"></div>
-    <div id="statsPdlBlock">
+    <div id="statsBlock">
       <div class="stats-grid">
         <div class="chart-card">
           <div class="chart-card-header">
             <h2 class="chart-card-title">Distribución de notas</h2>
-            <small style="color: var(--text-muted);">Cantidad de estudiantes por tramo de nota (sobre 10)</small>
+            <small style="color: var(--text-muted);" id="statsHistoSub">Cantidad de estudiantes por nota (sobre 10)</small>
           </div>
           <div id="statsHisto"></div>
         </div>
-        <div class="chart-card">
+        <div class="chart-card" id="statsSectionsCard">
           <div class="chart-card-header">
             <h2 class="chart-card-title">Rendimiento por sección</h2>
             <small style="color: var(--text-muted);">Promedio obtenido como % del puntaje máximo</small>
@@ -334,29 +320,45 @@
         </div>
         <div id="statsItems"></div>
       </div>
+      <div class="chart-card" id="statsCalifCard" style="margin-bottom: 1.25rem; display: none;">
+        <div class="chart-card-header">
+          <h2 class="chart-card-title">Calificaciones por ejercicio</h2>
+          <small style="color: var(--text-muted);">Cuántos estudiantes obtuvieron cada calificación en cada ejercicio</small>
+        </div>
+        <div class="table-responsive" style="overflow-x: auto;" id="statsCalif"></div>
+      </div>
       <div class="table-responsive" id="statsCorrectores"></div>
-    </div>
-    <div class="info-box" id="statsMatNote" style="display: none;">
-      📐 La corrección de Matemática 23/10 todavía no está cargada en el sistema: por ahora esta instancia registra el presentismo. Con el examen y su clave o rúbrica se agrega la corrección y sus estadísticas igual que en PdL.
     </div>
   </main>
 
-  <!-- PUBLICACIÓN (solo Dirección, PdL) -->
+  <!-- PUBLICACIÓN (solo Dirección) -->
   <main id="view-publicacion" class="view-section">
     <div class="page-title-row">
       <div>
         <h2 id="pubTitle">📤 Publicación</h2>
-        <small>Los estudiantes ven su nota de PdL con su DNI recién cuando Dirección la publica, y solo si todos los exámenes de la fecha están corregidos.</small>
+        <small>Las familias ven la nota con el DNI recién cuando Dirección la publica. Se puede liberar de a partes: cada vez se publican las notas ya corregidas, y cada estudiante publicado queda cerrado para los profesores.</small>
       </div>
     </div>
     <div class="info-box" id="rosterInfo" style="margin-bottom: 1rem;"></div>
     <div id="pubCard"></div>
+    <!-- Respuestas esperadas (Matemática): se cargan desde un archivo que no se publica -->
+    <div class="chart-card pub-card" id="claveCard" style="display: none; margin-top: 1.25rem;">
+      <div class="chart-card-header">
+        <h2 class="chart-card-title">🔑 Respuestas esperadas para los profesores</h2>
+        <small style="color: var(--text-muted);">Se guardan en Firebase y solo las ven Dirección y los profesores de la materia. El archivo está en la carpeta del examen (no se sube a GitHub).</small>
+      </div>
+      <div id="claveStatus" class="pub-status wait"></div>
+      <div class="pub-actions">
+        <button type="button" class="btn btn-secondary" id="btnClaveFile">📂 Cargar archivo de respuestas (.json)</button>
+        <input type="file" id="claveFileInput" accept=".json,application/json" style="display: none;">
+      </div>
+    </div>
   </main>
 
   <div id="toastContainer" class="toast-container"></div>
 
-  <script src="../data/pdlConfig.js?v=2027.4"></script>
-  <script src="../js/instancias-core.js?v=2027.2"></script>
-  <script src="../js/instancias.js?v=2027.4"></script>
+  <script src="../data/pdlConfig.js?v=2027.8"></script>
+  <script src="../js/instancias-core.js?v=2027.6"></script>
+  <script src="../js/instancias.js?v=2027.8"></script>
 </body>
 </html>

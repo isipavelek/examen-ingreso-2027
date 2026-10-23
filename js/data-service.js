@@ -34,7 +34,8 @@
       this.resolutions = {}; // studentId -> resolution object
       this.instanceOverrides = {}; // studentId -> { pasa, updatedBy, updatedAt } definido por Dirección
       this.encuentroAttendance = {}; // `${encuentroId}_${studentId}` -> { presente, updatedBy, updatedAt }
-      this.instancias = { roster: [], grades: {} }; // padrón y corrección de PdL de la 2da instancia (solo Dirección)
+      // Padrón, correcciones de PdL y Matemática de la 2da instancia y desempates del orden de mérito (solo Dirección)
+      this.instancias = { roster: [], grades: {}, matGrades: {}, meritoDecisiones: {}, meritoPublicacion: null };
       this.currentUserProfile = null;
       this.listeners = new Set();
       this.init();

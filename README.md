@@ -87,14 +87,28 @@ Todos ingresan por **`EST/index.html`** y el sistema deriva a cada uno:
 | :--- | :--- |
 | **Preceptores** | Sistema principal (carga del 2/10, Mi Progreso, Padrón). |
 | **Profesores de PdL** (Matias Demaro, Alexis Tagliavini) | `EST/instancias.html`: solo PdL 16/10 y PdL 30/10. |
+| **Profesores de Matemática** (5 cuentas) | `EST/instancias.html`: solo Matemática 23/10. |
 | **Dirección y Vicedirección** | Sistema principal, con una barra para moverse entre **Ingreso 2/10 · PdL 16/10 · Matemática 23/10 · PdL 30/10 · Resumen general**. |
 
 **Cada fecha de la 2da instancia** (`EST/instancias.html?fecha=16-10`, `23-10`, `30-10`) tiene:
-- **Presentismo:** es la misma toma de lista de *Asistencia Encuentros* (`instance_attendance`): lo que marcan los preceptores se ve acá y en el Resumen general, y Dirección también puede marcarlo desde esta pestaña. Los profesores de PdL no toman presentismo: solo corrigen, y un examen corregido cuenta como presente.
-- **PdL – Corrección por rúbrica:** se pica el nivel de cada uno de los 14 ítems y la nota se arma sola (atajos: `↑/↓` ítem, `1–4` nivel, `0` cero, `A/B` tema, `Enter` terminar).
-- **PdL – Resultados:** tabla con nota por sección y planilla Excel.
-- **Estadísticas de la instancia:** en PdL, distribución de notas, secciones, ítem por ítem, tema y corrector; en Matemática 23/10, presentismo (su corrección todavía no está cargada).
-- **PdL – Publicación (solo Dirección):** se habilita recién cuando todos los exámenes de la fecha están corregidos o ausentes; después los profesores no pueden modificar esa fecha.
+- **Presentismo (Dirección):** es la misma toma de lista de *Asistencia Encuentros* (`instance_attendance`): lo que marcan los preceptores se ve acá y en el Resumen general, y Dirección también puede marcarlo desde esta pestaña. Los profesores no toman presentismo: solo corrigen, y un examen corregido cuenta como presente.
+- **Corrección por rúbrica:** se pica el nivel de cada ítem y la nota se arma sola, con guardado automático (`↑/↓` ítem, números para el nivel, `Enter` terminar y pasar al siguiente).
+  - **PdL:** 14 ítems en 3 secciones, Tema A/B (`A`/`B`), nota = suma con 2 decimales.
+  - **Matemática 23/10:** 11 ítems (1a, 1b, 2a, 2b, 3a, 3b, 4 a 8) calificados **B** (100 %) · **B⁻** (75 %) · **R** (50 %) · **M** · **NR** (0) con las teclas `1`–`5` (`0` = NR). Nota del examen = suma exacta de los puntajes (se muestra con 2 decimales), de 1 a 10. Debajo de cada ejercicio se ve la **respuesta esperada**.
+- **Resultados:** tabla por estudiante (PdL por sección; Matemática nota y condición; todas las notas con 2 decimales) y planilla Excel (Matemática con la calificación de cada ejercicio).
+- **Estadísticas de la instancia:** distribución de notas, nota más alta y más baja, ítem por ítem, por corrector; PdL además por sección y tema; Matemática además cuántos B / B⁻ / R / M / NR hubo en cada ejercicio.
+- **Publicación (solo Dirección), un botón por fecha:** Dirección libera las notas **de a partes**, cuando las revisó: cada vez se publican las ya corregidas (y los ausentes) que todavía no estaban publicadas, más las que Dirección cambió después de publicar. Las demás siguen como "Aún sin corregir". Cada estudiante publicado queda cerrado para los profesores (`pdl_config/publicacion.publicadas[fecha].alumnos`); se puede retirar todo lo publicado de una fecha. La **condición final** tiene su propio botón en el Orden de mérito.
+
+**Respuestas esperadas de Matemática:** no están en el código (el repositorio y el sitio son públicos). Están en `Examen 23-10/respuestas_matematica.json`, que queda solo en la PC de Dirección (la carpeta está en `.gitignore`). Dirección las sube desde *Matemática 23/10 → Publicación → 🔑 Respuestas esperadas* y quedan en `mat_config/clave`, que solo pueden leer Dirección y los profesores de Matemática.
+
+**No hay nota de aprobación por examen.** Cada examen da su nota; el ingreso se decide por el orden de mérito.
+
+**🏆 Orden de mérito** (Dirección, `EST/index.html#merito`): ingresan los mejores **81** (`ingreso.cupo` en `data/pdlConfig.js`) según el **promedio de PdL** (16/10 o 30/10, según el cronograma) **y Matemática 23/10**, calculado con la suma exacta de cada examen y todos los decimales. Todos tienen que estar evaluados en las dos materias: a quien le falta una nota (sin corregir o ausente) queda aparte y el orden se marca como provisorio. Quien estuvo ausente en alguno de los dos exámenes no ingresa. Si hay empate en el último lugar y no entran todos, Dirección elige en la tabla quiénes ingresan (se guarda en `merito_config/desempates`). Planilla Excel con puesto, notas, promedio y situación. Con todo corregido y el empate resuelto, **📤 Publicar condición final** deja `ingreso.ingresa` en el resultado de cada estudiante (se puede republicar o retirar).
+
+**Vista de las familias** (`index.html`, con el DNI), en pestañas:
+- **Resumen:** examen multiple choice con su nota y ✔ / ✘. Si no pasó, solo eso y el mensaje de no pasa. Si pasó: examen de desarrollo de PdL y de Matemática con fecha y nota (o "Aún sin corregir") y al final la **condición final** (ingresa / no ingresa, o pendiente mientras Dirección no la publique). Los mensajes se editan en `data/mensajesFamilias.js` (`{nombre}` = nombre del estudiante).
+- **Examen multiple choice:** el resultado del 2/10 con las respuestas.
+- **Exámenes de desarrollo** (solo si pasó el multiple choice): por cada examen, la nota y en cada punto el **tema evaluado** y cómo le fue (puntaje en PdL; calificación B / B⁻ / R / M / NR en Matemática). Sin publicar dice "Aún sin corregir". No se muestran consignas, respuestas, observaciones ni correctores. Para ver un ejemplo con estudiantes inventados: `demo/vista-familias.html` (solo en la PC de Dirección, no se sube a GitHub).
 
 **Resumen general** (Dirección): tarjetas por instancia, recorrido de los estudiantes (inscriptos → presentes 2/10 → pasan → presentes y corregidos en 2da instancia), promedio por instancia y la trayectoria de cada estudiante. Las estadísticas particulares del 2/10 siguen en *Estadísticas Pedagógicas*.
 
@@ -102,7 +116,7 @@ Todos ingresan por **`EST/index.html`** y el sistema deriva a cada uno:
 
 **Corregir datos de un estudiante (solo Dirección):** en *Padrón y Contactos → ✏️ Editar datos* se cambian nombre, DNI, aula, escuela y contacto. Se guarda en `student_overrides` sobre el padrón original (se puede volver al original). Las notas, cargas, condición, correcciones y presentismo quedan vinculados al ID interno del estudiante; si ya tenía resultado publicado, pasa al DNI nuevo. Las listas de Dirección de la configuración (pasa por Dirección, cronograma alternativo) siguen usando el DNI original.
 
-**Profesores de PdL:** su UID, nombre y correo están en `data/pdlConfig.js` y en `firestore.rules` (función `isProfesorPdl`). Si cambian, actualizar ambos y volver a publicar las reglas.
+**Profesores de PdL y de Matemática:** su UID, nombre y correo están en `data/pdlConfig.js` (`profesores` y `profesoresMat`) y en `firestore.rules` (funciones `isProfesorPdl` e `isProfesorMat`). Si cambian, actualizar ambos y volver a publicar las reglas. Las cuentas con UID de ejemplo (`MAT_PROF_...`) no aparecen en el inicio de sesión.
 
 ---
 

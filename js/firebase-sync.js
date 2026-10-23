@@ -227,9 +227,15 @@
         if (firebaseUser) {
           const authData = AUTHORIZED_USERS[firebaseUser.uid];
           const profesoresPdl = (window.PDL_CONFIG && window.PDL_CONFIG.profesores) || [];
+          const profesoresMat = (window.PDL_CONFIG && window.PDL_CONFIG.profesoresMat) || [];
           if (!authData && profesoresPdl.some(p => p.uid === firebaseUser.uid)) {
             // Los profesores de PdL solo tienen acceso a la corrección de PdL
             window.location.href = 'instancias.html?fecha=16-10';
+            return;
+          }
+          if (!authData && profesoresMat.some(p => p.uid === firebaseUser.uid)) {
+            // Los profesores de Matemática solo tienen acceso a la corrección de Matemática 23/10
+            window.location.href = 'instancias.html?fecha=23-10';
             return;
           }
           if (authData) {
@@ -300,7 +306,7 @@
 
     teardownFirestoreListeners() {
       ['unsubscribeSubmissions', 'unsubscribeResolutions', 'unsubscribeAttendance', 'unsubscribeInstanceOverrides', 'unsubscribeEncuentroAttendance', 'unsubscribeDeleted',
-        'unsubscribePdlRoster', 'unsubscribePdlGrades', 'unsubscribeStudentOverrides']
+        'unsubscribePdlRoster', 'unsubscribePdlGrades', 'unsubscribeMatGrades', 'unsubscribeMerito', 'unsubscribeMeritoPub', 'unsubscribeStudentOverrides']
         .forEach(key => {
           if (typeof this[key] === 'function') this[key]();
           this[key] = null;
@@ -426,6 +432,22 @@
             snap.forEach(doc => { grades[doc.id] = doc.data(); });
             window.DataService.setInstanciasData({ grades });
           }, err => handleFirestoreError(err, 'pdl_grades'));
+        this.unsubscribeMatGrades = this.db.collection('mat_grades')
+          .onSnapshot(snap => {
+            const matGrades = {};
+            snap.forEach(doc => { matGrades[doc.id] = doc.data(); });
+            window.DataService.setInstanciasData({ matGrades });
+          }, err => handleFirestoreError(err, 'mat_grades'));
+        // Orden de mérito: decisiones de Dirección sobre los empates en el último lugar
+        this.unsubscribeMerito = this.db.collection('merito_config').doc('desempates')
+          .onSnapshot(snap => {
+            const data = snap.exists ? snap.data() : null;
+            window.DataService.setInstanciasData({ meritoDecisiones: (data && data.decisiones) || {} });
+          }, err => handleFirestoreError(err, 'merito_config'));
+        this.unsubscribeMeritoPub = this.db.collection('merito_config').doc('publicacion')
+          .onSnapshot(snap => {
+            window.DataService.setInstanciasData({ meritoPublicacion: snap.exists ? snap.data() : null });
+          }, err => handleFirestoreError(err, 'merito_config'));
         // El presentismo de cada encuentro llega por 'instance_attendance' (toma de lista, punto 3c)
       }
 
@@ -1003,11 +1025,48 @@
       if (instancias && instancias.grades && instancias.grades[studentId]) {
         batch.set(this.db.collection('pdl_grades').doc(studentId), ident, { merge: true });
       }
+      if (instancias && instancias.matGrades && instancias.matGrades[studentId]) {
+        batch.set(this.db.collection('mat_grades').doc(studentId), ident, { merge: true });
+      }
 
       await this.withTimeout(batch.commit(), 10000);
     }
 
     // Padrón de la 2da instancia (EST/instancias.html): solo datos básicos, sin contactos
+    // Decisión de Dirección sobre un estudiante empatado en el último lugar del orden de mérito
+    // (true: ingresa, false: no ingresa, null: sin decidir)
+    async pushMeritoDecision(studentId, ingresa) {
+      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
+      await this.withTimeout(this.db.collection('merito_config').doc('desempates').set({
+        decisiones: { [studentId]: ingresa === null ? firebase.firestore.FieldValue.delete() : ingresa },
+        actualizadoPor: this.currentProfile ? this.currentProfile.name : 'Dirección',
+        actualizadoEn: new Date().toISOString()
+      }, { merge: true }), 7000);
+    }
+
+    // Condición final del ingreso en el resultado de cada estudiante ('student_results/{dni}.ingreso').
+    // items: [{ dni, ingresa: true | false }]; con retirar = true se borra la publicación.
+    async publishIngreso(items, { retirar = false } = {}) {
+      if (!this.db) throw new Error('Base de datos Firestore no conectada.');
+      const en = new Date().toISOString();
+      for (let i = 0; i < items.length; i += 400) {
+        const batch = this.db.batch();
+        items.slice(i, i + 400).forEach(it => {
+          batch.set(this.db.collection('student_results').doc(it.dni), {
+            ingreso: retirar ? firebase.firestore.FieldValue.delete() : { ingresa: it.ingresa, publicadoEn: en }
+          }, { merge: true });
+        });
+        await this.withTimeout(batch.commit(), 20000);
+      }
+      const ref = this.db.collection('merito_config').doc('publicacion');
+      await this.withTimeout(retirar ? ref.delete() : ref.set({
+        en,
+        por: this.currentProfile ? this.currentProfile.name : 'Dirección',
+        cantidad: items.length,
+        ingresan: items.filter(it => it.ingresa).length
+      }), 7000);
+    }
+
     async pushPdlRoster(alumnos) {
       if (!this.db) throw new Error('Base de datos Firestore no conectada.');
       await this.withTimeout(this.db.collection('pdl_config').doc('padron').set({

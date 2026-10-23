@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Resultado del Examen de Ingreso 2027 • EST UTN San Miguel</title>
-  <link rel="stylesheet" href="css/styles.css?v=2027.10">
+  <link rel="stylesheet" href="css/styles.css?v=2027.15">
 
   <!-- Solo Firestore: el portal del estudiante no usa el padrón ni las cargas de los preceptores -->
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -47,6 +47,30 @@
     .answer-result.mid { color: #fbbf24; background: rgba(245, 158, 11, 0.12); }
     .pdl-score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; margin-top: 0.75rem; }
     .pdl-score-grid .score-box.final { grid-column: 1 / -1; }
+    /* Pestañas del resultado */
+    .result-tabs { display: flex; gap: 0.35rem; margin-bottom: 1rem; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 0.35rem; overflow-x: auto; }
+    .result-tab { flex: 1 1 0; min-width: max-content; padding: 0.7rem 0.9rem; border: none; border-radius: var(--radius-md); background: transparent; color: var(--text-muted); font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.92rem; cursor: pointer; }
+    .result-tab.active { background: var(--color-primary); color: #fff; }
+    .result-tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+    /* Resumen */
+    .resumen-row { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 1rem; align-items: center; padding: 0.85rem 0; border-bottom: 1px solid var(--border-subtle); }
+    .resumen-row:last-of-type { border-bottom: none; }
+    .resumen-exam { font-weight: 700; line-height: 1.3; }
+    .resumen-fecha { font-size: 0.82rem; color: var(--text-muted); }
+    .resumen-nota { text-align: right; font-family: 'Outfit', sans-serif; font-size: 1.4rem; font-weight: 800; white-space: nowrap; }
+    .resumen-nota .of { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; }
+    .resumen-nota.pendiente { font-size: 0.9rem; color: #fbbf24; font-weight: 700; }
+    .resumen-mark { font-size: 0.85rem; font-weight: 700; }
+    .resumen-mark.ok { color: #34d399; }
+    .resumen-mark.bad { color: #f87171; }
+    .final-condition { margin-top: 1rem; padding: 1.1rem; border-radius: var(--radius-md); line-height: 1.5; }
+    .final-condition h3 { font-size: 1.05rem; margin-bottom: 0.35rem; }
+    .final-condition.ingresa { background: rgba(16, 185, 129, 0.13); border: 1px solid rgba(16, 185, 129, 0.45); color: #a7f3d0; }
+    .final-condition.no-ingresa { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.35); color: #bfdbfe; }
+    .final-condition.pendiente { background: rgba(245, 158, 11, 0.1); border: 1px dashed rgba(245, 158, 11, 0.45); color: #fde68a; }
+    .final-condition.no-pasa { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.35); color: #fecaca; }
+    .pending-exam { margin-top: 0.75rem; padding: 1rem; border-radius: var(--radius-md); background: var(--bg-elevated); border: 1px dashed rgba(245, 158, 11, 0.45); text-align: center; }
+    .pending-exam-title { font-size: 1.05rem; font-weight: 700; color: #fbbf24; margin-bottom: 0.25rem; }
     .schedule-card { margin-top: 1rem; padding: 1rem 1.1rem; border-radius: var(--radius-md); background: var(--bg-elevated); border: 1px solid rgba(16, 185, 129, 0.35); }
     .schedule-item { margin-top: 0.85rem; }
     .schedule-title { font-weight: 700; font-size: 1rem; margin-bottom: 0.35rem; }
@@ -96,19 +120,43 @@
           </div>
           <button type="button" class="btn btn-secondary" id="btnLogout">Consultar otro DNI</button>
         </div>
-        <div id="resSummary"></div>
       </div>
 
-      <div class="student-card" id="resPdlCard" style="display: none;"></div>
+      <!-- Pestañas: Resumen · Examen multiple choice · Exámenes de desarrollo (solo si pasó el multiple choice) -->
+      <nav class="result-tabs" role="tablist" aria-label="Resultados">
+        <button type="button" class="result-tab active" role="tab" data-tab="resumen">Resumen</button>
+        <button type="button" class="result-tab" role="tab" data-tab="mc">Examen multiple choice</button>
+        <button type="button" class="result-tab" role="tab" data-tab="desarrollo" id="tabBtnDesarrollo">Exámenes de desarrollo</button>
+      </nav>
 
-      <div class="student-card" id="resAnswersCard" style="display: none;">
-        <h2 class="section-title">Tus respuestas</h2>
-        <div class="answers-summary" id="resAnswersSummary"></div>
-        <div id="resAnswersBody"></div>
+      <!-- 1. Resumen -->
+      <div class="result-panel" data-panel="resumen">
+        <div class="student-card" id="resResumen"></div>
+      </div>
+
+      <!-- 2. Examen multiple choice (2/10) -->
+      <div class="result-panel" data-panel="mc" style="display: none;">
+        <div class="student-card">
+          <h2 class="section-title">📝 Examen multiple choice</h2>
+          <div class="answers-summary">Viernes 2 de octubre • Matemática y Prácticas del Lenguaje</div>
+          <div id="resSummary"></div>
+        </div>
+        <div class="student-card" id="resAnswersCard" style="display: none;">
+          <h2 class="section-title">Respuestas</h2>
+          <div class="answers-summary" id="resAnswersSummary"></div>
+          <div id="resAnswersBody"></div>
+        </div>
+      </div>
+
+      <!-- 3. Exámenes de desarrollo (2da instancia) -->
+      <div class="result-panel" data-panel="desarrollo" style="display: none;">
+        <div class="student-card" id="resPdlCard" style="display: none;"></div>
+        <div class="student-card" id="resMatCard" style="display: none;"></div>
       </div>
     </section>
   </div>
 
-  <script src="js/alumno.js?v=2027.11"></script>
+  <script src="data/mensajesFamilias.js?v=2027.1"></script>
+  <script src="js/alumno.js?v=2027.15"></script>
 </body>
 </html>

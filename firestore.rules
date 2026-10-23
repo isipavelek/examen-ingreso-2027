@@ -32,10 +32,27 @@ service cloud.firestore {
       ];
     }
 
-    // Una fecha de PdL publicada por Dirección queda cerrada para los profesores
-    function pdlPublicada(fecha) {
+    // Profesores de Matemática: solo acceden a la corrección de Matemática 23/10 (mismos UID que data/pdlConfig.js)
+    function isProfesorMat() {
+      return request.auth != null && request.auth.uid in [
+        'Ek3ZgDKrRehA7fvvdf27LLGnb8o2', // Prof Mat1
+        'yNuJfF5xrrMaTyjqFvKvfYb0DR72', // Prof Mat2
+        'LBuXuiDLIyYhJX3FdoXHmWUcTYI3', // Prof Mat3
+        'AsE3I8RHS2bAK923LDkQnyNGnMH2', // Prof Mat4
+        'zrFqOLTgNOSWA3WBcqw9HHQ3Wfo2'  // Prof Mat5
+      ];
+    }
+
+    function isProfesor() {
+      return isProfesorPdl() || isProfesorMat();
+    }
+
+    // Dirección libera las notas de a partes: un estudiante ya publicado queda cerrado para los profesores.
+    // (Una publicación sin lista de alumnos cierra toda la fecha.)
+    function notaPublicada(fecha, studentId) {
       let pub = /databases/$(database)/documents/pdl_config/publicacion;
-      return exists(pub) && (fecha in get(pub).data.get('publicadas', {}));
+      return exists(pub) && (fecha in get(pub).data.get('publicadas', {}))
+        && (studentId in get(pub).data.publicadas[fecha].get('alumnos', [studentId]));
     }
 
     // Datos internos: solo personal autenticado (los estudiantes no pueden ver cargas ni correctores).
@@ -45,9 +62,9 @@ service cloud.firestore {
     match /students_attendance/{id}  { allow read: if isStaff(); allow write: if isDireccion(); }
 
     // Toma de lista de los encuentros de la próxima instancia (PdL 16/10, Matemática 23/10, PdL 30/10).
-    // La toma el personal; los profesores de PdL solo la leen (no toman presentismo, solo corrigen).
+    // La toma el personal; los profesores solo la leen (no toman presentismo, solo corrigen).
     match /instance_attendance/{id} {
-      allow read: if isStaff() || isProfesorPdl();
+      allow read: if isStaff() || isProfesor();
       allow delete: if isStaff();
       allow create, update: if isStaff()
         && request.resource.data.presente is bool
@@ -62,13 +79,30 @@ service cloud.firestore {
     match /pdl_grades/{studentId} {
       allow read: if isDireccion() || isProfesorPdl();
       allow create, update: if isDireccion() || (isProfesorPdl()
-        && !pdlPublicada(request.resource.data.fecha)
-        && (resource == null || !pdlPublicada(resource.data.fecha)));
+        && !notaPublicada(request.resource.data.fecha, studentId)
+        && (resource == null || !notaPublicada(resource.data.fecha, studentId)));
       allow delete: if isDireccion();
     }
-    // Padrón de la 2da instancia y estado de publicación de PdL: los arma Dirección
+    // Corrección de Matemática 23/10 por rúbrica (un documento por estudiante)
+    match /mat_grades/{studentId} {
+      allow read: if isDireccion() || isProfesorMat();
+      allow create, update: if isDireccion() || (isProfesorMat()
+        && request.resource.data.fecha == '23-10'
+        && !notaPublicada('23-10', studentId));
+      allow delete: if isDireccion();
+    }
+    // Respuestas esperadas de Matemática: las carga Dirección, solo las leen Dirección y los profesores de Matemática
+    match /mat_config/{docId} {
+      allow read: if isDireccion() || isProfesorMat();
+      allow write: if isDireccion();
+    }
+    // Orden de mérito del ingreso: decisiones de Dirección sobre los empates en el último lugar
+    match /merito_config/{docId} {
+      allow read, write: if isDireccion();
+    }
+    // Padrón de la 2da instancia y estado de publicación: los arma Dirección
     match /pdl_config/{docId} {
-      allow read: if isDireccion() || isProfesorPdl();
+      allow read: if isDireccion() || isProfesor();
       allow write: if isDireccion();
     }
 
