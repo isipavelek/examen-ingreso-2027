@@ -5,16 +5,17 @@
  */
 (function () {
   const Core = window.InstanciasCore;
-  const pdlR = Core.getRubrica('pdl');
   const matR = Core.getRubrica('mat');
 
   // Mismo formato que publica Dirección (instancias.js → buildPublicResult)
   function publicPdl(nivelesPorItem, fecha, fechaTexto) {
+    // Cada fecha con su rúbrica: el 30/10 fue tema único con 15 ítems
+    const pdlR = Core.getRubricaInstancia(fecha);
     const niveles = {};
     pdlR.items.forEach((it, i) => { niveles[it.id] = it.niveles[nivelesPorItem[i] || 0].key; });
     const sc = Core.computeScores(pdlR, niveles);
     return {
-      fecha, fechaTexto, estado: 'evaluado', tema: 'A', nota: sc.nota,
+      fecha, fechaTexto, estado: 'evaluado', tema: pdlR.usaTema ? 'A' : null, nota: sc.nota,
       secciones: pdlR.secciones.map(s => ({ id: s.id, titulo: s.titulo, nota: sc.secs[s.id], max: s.max })),
       items: pdlR.items.map(it => ({ id: it.id, seccion: it.seccion, criterio: it.criterio, puntaje: sc.puntajes[it.id], max: it.max }))
     };
@@ -56,7 +57,7 @@
       doc: {
         dni: '22222222', apellido: 'Ejemplo', nombre: 'Tomás (inventado)', cronograma: 'alternativo',
         ...primerExamen(6, 3, 3),
-        pdl: publicPdl([0, 0, 1, 2, 1, 0, 1, 0, 2, 0, 1, 0, 1, 1], '30-10', 'Viernes 30 de octubre'),
+        pdl: publicPdl([0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1], '30-10', 'Viernes 30 de octubre'),
         mat: publicMat(['B', 'B-', 'B', 'R', 'B', 'B', 'M', 'B-', 'R', 'B', 'NR']),
         ingreso: { ingresa: true }
       }

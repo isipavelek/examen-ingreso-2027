@@ -87,8 +87,9 @@
       return Core.getInstancia(this.fecha);
     }
 
+    // Rúbrica de la fecha activa (PdL 30/10 tiene la suya)
     get rubrica() {
-      return Core.getRubrica(this.inst.tipo);
+      return Core.getRubricaInstancia(this.fecha);
     }
 
     get grades() {
@@ -540,7 +541,8 @@
         ausente: g ? !!g.ausente : !!(att && att.asistio === false),
         niveles: Core.nivelesDeGrade(this.rubrica, g),
         observaciones: (g && g.observaciones) || '',
-        finalizada: !!(g && g.finalizada)
+        finalizada: !!(g && g.finalizada),
+        otraRubrica: Core.usaOtraRubrica(this.rubrica, g)
       };
     }
 
@@ -760,23 +762,27 @@
       const sc = this.scores(cur.niveles);
       const compact = rub.tipo === 'mat';
       let html = '';
+      if (cur.otraRubrica) {
+        html += '<div class="lock-notice" style="margin: 0 0 0.6rem;">⚠️ Esta corrección se había empezado con la rúbrica de otro examen. Volvé a calificar cada ítem con la rúbrica de esta fecha y terminá la corrección.</div>';
+      }
       if (compact) {
         html += `<div class="criterios-legend">${CFG.matematica.calificaciones.map(c => `<b>${c.label}</b> ${escapeHtml(c.nombre)} (${Math.round(c.factor * 100)} %): ${escapeHtml(c.desc)}`).join('<br>')}</div>`;
         if (!this.clave) html += '<div class="muted-note">Las respuestas esperadas todavía no están cargadas: Dirección las sube desde Publicación.</div>';
       }
       rub.secciones.forEach(sec => {
-        html += `<div class="sec-header"><span>${rub.secciones.length > 1 ? `Sección ${sec.id} • ` : ''}${escapeHtml(sec.titulo)}</span><span>${fmt(sc.secs[sec.id])} / ${fmt(sec.max)}</span></div>`;
+        html += `<div class="sec-header"><span>${rub.secciones.length > 1 ? `Sección ${sec.numero || sec.id} • ` : ''}${escapeHtml(sec.titulo)}</span><span>${fmt(sc.secs[sec.id])} / ${fmt(sec.max)}</span></div>`;
         rub.items.forEach((it, idx) => {
           if (it.seccion !== sec.id) return;
           const key = cur.niveles[it.id];
           const val = sc.puntajes[it.id];
           const clave = this.claveDe(it.id);
-          const guia = it.guia && hasTema ? it.guia[cur.tema] : null;
+          // Orientación para el profesor: por tema (16/10) o única (30/10, tema único)
+          const guia = typeof it.guia === 'string' ? it.guia : (it.guia && hasTema ? it.guia[cur.tema] : null);
           let guiaHtml = '';
           if (clave) {
             guiaHtml = `<div class="item-guia"><strong>Respuesta esperada:</strong> ${escapeHtml(clave.respuesta)}${clave.desarrollo ? ` <span class="guia-dev">· ${escapeHtml(clave.desarrollo)}</span>` : ''}</div>`;
           } else if (guia) {
-            guiaHtml = `<div class="item-guia"><strong>Orientación Tema ${cur.tema}:</strong> ${escapeHtml(guia)}</div>`;
+            guiaHtml = `<div class="item-guia"><strong>Orientación${typeof it.guia === 'string' ? '' : ` Tema ${cur.tema}`}:</strong> ${escapeHtml(guia)}</div>`;
           }
           const base = it.tema ? `${it.criterio} · ${it.tema}` : it.criterio;
           const criterio = clave && clave.consigna ? `${base} — ${clave.consigna}` : base;
@@ -856,7 +862,7 @@
       } else {
         $('scSections').innerHTML = rub.secciones.map(s => `
           <div class="subject-item">
-            <div class="subject-name">${s.id}. ${escapeHtml(s.titulo)}</div>
+            <div class="subject-name">${s.numero || s.id}. ${escapeHtml(s.titulo)}</div>
             <div class="subject-score">${showNota ? fmt(sc.secs[s.id]) : '-'} / ${fmt(s.max)}</div>
           </div>`).join('');
       }
@@ -931,8 +937,8 @@
         ];
       }
       return [
-        { th: 'Tema', td: g => g.tema || '-' },
-        ...rub.secciones.map(s => ({ th: `${s.id} (/${fmt(s.max, 0)})`, td: g => fmt(g[`nota${s.id}`]) })),
+        ...(rub.usaTema ? [{ th: 'Tema', td: g => g.tema || '-' }] : []),
+        ...rub.secciones.map(s => ({ th: `${s.numero || s.id} (/${fmt(s.max, 0)})`, td: g => fmt(g[`nota${s.id}`]) })),
         { th: 'Nota (/10)', td: g => `<strong>${fmt(g.nota)}</strong>` }
       ];
     }
@@ -1286,7 +1292,7 @@
     // No se publican consignas, respuestas, observaciones ni quién corrigió.
     buildPublicResult(st, fecha, publicadoEn) {
       const inst = Core.getInstancia(fecha);
-      const rub = Core.getRubrica(inst.tipo);
+      const rub = Core.getRubricaInstancia(fecha);
       const g = this.gradesFor(fecha).get(st.id);
       const base = { fecha, fechaTexto: inst.fechaTexto, publicadoEn };
       if (!g || g.ausente) return { ...base, estado: 'ausente' };
@@ -1318,7 +1324,7 @@
       await this.saveNow();
       const s = this.getFechaSummary(fecha);
       const inst = Core.getInstancia(fecha);
-      const campo = Core.getRubrica(inst.tipo).campoPublico;
+      const campo = Core.getRubricaInstancia(fecha).campoPublico;
       const aPublicar = [...s.nuevos, ...s.cambiados];
       if (aPublicar.length === 0) {
         this.toast(`No hay notas nuevas corregidas de ${inst.titulo} para publicar.`, 'warning');
@@ -1351,7 +1357,7 @@
 
     async unpublish(fecha) {
       const inst = Core.getInstancia(fecha);
-      const campo = Core.getRubrica(inst.tipo).campoPublico;
+      const campo = Core.getRubricaInstancia(fecha).campoPublico;
       if (!confirm(`¿Retirar todas las notas publicadas de ${inst.titulo}?\n\nLas familias vuelven a ver "Aún sin corregir" y los profesores pueden volver a modificar esas correcciones.`)) return;
       try {
         const roster = Core.rosterFor(this.roster, fecha);

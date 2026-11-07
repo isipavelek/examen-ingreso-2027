@@ -10,30 +10,35 @@
   const exact = n => Math.round(n * 10000) / 10000;
   const fmtPts = n => n.toFixed(2).replace('.', ',');
 
+  // Rúbrica de PdL por niveles de puntaje (la misma forma para el 16/10 y el 30/10)
+  const rubricaPdl = ({ secciones, items, usaTema }) => ({
+    tipo: 'pdl',
+    materia: 'Prácticas del Lenguaje',
+    coleccion: 'pdl_grades',
+    campoPublico: 'pdl',
+    usaTema,
+    porCalificacion: false,
+    secciones,
+    items: items.map(it => ({
+      id: it.id,
+      seccion: it.seccion,
+      criterio: it.criterio,
+      guia: it.guia || null,
+      max: it.niveles[0].pts,
+      niveles: it.niveles.map(lv => ({ key: String(lv.pts), label: `${fmtPts(lv.pts)} pts`, pts: lv.pts, desc: lv.desc }))
+    })),
+    notaExacta: suma => suma,
+    nota: suma => round2(suma)
+  });
+
   // Rúbrica de cada tipo de examen, en un mismo formato:
   //   items: [{ id, seccion, criterio, max, niveles: [{ key, label, pts, desc }] }]
   //   notaExacta(suma): nota sin redondear (la usa el orden de mérito); nota(suma): la que se muestra (2 decimales)
   //   coleccion: dónde se guardan las correcciones; campoPublico: campo en student_results
+  //   (una instancia puede tener su propia rúbrica: PdL 30/10 → 'pdl3010', tema único)
   const RUBRICAS = {
-    pdl: {
-      tipo: 'pdl',
-      materia: 'Prácticas del Lenguaje',
-      coleccion: 'pdl_grades',
-      campoPublico: 'pdl',
-      usaTema: true,
-      porCalificacion: false,
-      secciones: CFG.secciones,
-      items: CFG.items.map(it => ({
-        id: it.id,
-        seccion: it.seccion,
-        criterio: it.criterio,
-        guia: it.guia || null,
-        max: it.niveles[0].pts,
-        niveles: it.niveles.map(lv => ({ key: String(lv.pts), label: `${fmtPts(lv.pts)} pts`, pts: lv.pts, desc: lv.desc }))
-      })),
-      notaExacta: suma => suma,
-      nota: suma => round2(suma)
-    },
+    pdl: rubricaPdl({ secciones: CFG.secciones, items: CFG.items, usaTema: true }),
+    pdl3010: rubricaPdl({ secciones: CFG.pdl3010.secciones, items: CFG.pdl3010.items, usaTema: false }),
     mat: {
       tipo: 'mat',
       materia: 'Matemática',
@@ -69,6 +74,20 @@
 
     getRubrica(tipo) {
       return RUBRICAS[tipo] || null;
+    },
+
+    // Rúbrica con la que se corrige una fecha (la propia de la instancia o la de su tipo)
+    getRubricaInstancia(instId) {
+      const inst = this.getInstancia(instId);
+      return inst ? (RUBRICAS[inst.rubrica] || RUBRICAS[inst.tipo] || null) : null;
+    },
+
+    // ¿La corrección se hizo con otra rúbrica? (p. ej. un 30/10 corregido antes con la rúbrica del 16/10)
+    usaOtraRubrica(rubrica, grade) {
+      if (!grade) return false;
+      const ids = rubrica.items.map(it => it.id);
+      const keys = Object.keys(grade.niveles || grade.puntajes || {});
+      return keys.some(k => !ids.includes(k));
     },
 
     // Estudiantes convocados: PdL según su fecha; Matemática 23/10, todos los que pasan
@@ -170,7 +189,6 @@
     //   estado: 'ingresa' | 'no_ingresa' | 'empate' (falta decidir) | 'ingresa_dir' | 'no_ingresa_dir' | 'incompleto' | 'ausente'
     ordenDeMerito({ roster, pdlGrades, matGrades, asistencia, decisiones }) {
       const cupo = (CFG.ingreso && CFG.ingreso.cupo) || 81;
-      const pdlR = RUBRICAS.pdl;
       const matR = RUBRICAS.mat;
       // Las notas son múltiplos de 1/80: con 6 decimales se compara sin ruido de punto flotante
       const exacto6 = n => Math.round(n * 1e6) / 1e6;
@@ -179,7 +197,8 @@
         const mg = (matGrades && matGrades[st.id]) || null;
         const pdlEstado = this.estadoGrade(pg, (asistencia[st.fecha] || {})[st.id]);
         const matEstado = this.estadoGrade(mg, (asistencia['23-10'] || {})[st.id]);
-        const pdl = pdlEstado === 'corregido' ? this.notaExactaDe(pdlR, pg) : null;
+        // Cada fecha de PdL con su rúbrica (el 30/10 tuvo otro examen)
+        const pdl = pdlEstado === 'corregido' ? this.notaExactaDe(this.getRubricaInstancia(st.fecha) || RUBRICAS.pdl, pg) : null;
         const mat = matEstado === 'corregido' ? this.notaExactaDe(matR, mg) : null;
         const completo = pdl !== null && mat !== null;
         const ausente = pdlEstado === 'ausente' || matEstado === 'ausente';
