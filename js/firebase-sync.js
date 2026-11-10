@@ -1006,8 +1006,9 @@
       const batch = this.db.batch();
       const results = this.db.collection('student_results');
 
-      const oldSnap = await this.withTimeout(results.doc(oldDni).get(), 7000);
-      if (oldSnap.exists) {
+      // Si antes no tenía DNI, no hay resultado publicado que mover
+      const oldSnap = oldDni ? await this.withTimeout(results.doc(oldDni).get(), 7000) : null;
+      if (oldSnap && oldSnap.exists) {
         if (ident.dni !== oldDni) {
           batch.set(results.doc(ident.dni), { ...oldSnap.data(), ...ident });
           batch.delete(results.doc(oldDni));
@@ -1048,6 +1049,7 @@
     // items: [{ dni, ingresa: true | false }]; con retirar = true se borra la publicación.
     async publishIngreso(items, { retirar = false } = {}) {
       if (!this.db) throw new Error('Base de datos Firestore no conectada.');
+      items = items.filter(it => it.dni); // sin DNI no hay dónde publicar
       const en = new Date().toISOString();
       for (let i = 0; i < items.length; i += 400) {
         const batch = this.db.batch();

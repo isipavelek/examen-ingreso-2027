@@ -870,7 +870,10 @@
         <h2 style="font-size: 1.2rem; margin-bottom: 0.2rem;">🏆 Orden de mérito del Ingreso 2027</h2>
         <small class="text-muted">Promedio de Prácticas del Lenguaje (16/10 o 30/10) y Matemática (23/10) con todos los decimales. No hay nota de aprobación por examen: ingresan los primeros del orden. Si hay empate en el último lugar, decide Dirección.</small>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.exportMerito()">📥 Planilla Excel</button>
+      <div class="d-flex gap-2" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.exportMerito()">📥 Planilla Excel</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="window.app.exportMeritoCompleto()" title="Orden de mérito con teléfonos, familiar, domicilio, escuela y demás datos para armar los legajos">📇 Excel con datos de contacto (legajos)</button>
+      </div>
     </div>
     <div class="kpi-cards-grid" id="meritoKpis"></div>
     <div id="meritoAlerts"></div>
@@ -1298,10 +1301,10 @@
   <script src="../data/pdlConfig.js?v=2027.10"></script>
   <script src="../js/instancias-core.js?v=2027.7"></script>
   <script src="../data/students.js?v=2027.4"></script>
-  <script src="../js/firebase-sync.js?v=2027.14"></script>
+  <script src="../js/firebase-sync.js?v=2027.15"></script>
   <script src="../js/data-service.js?v=2027.18"></script>
   <script src="../js/analytics.js?v=2027.7"></script>
   <script src="../js/audit.js?v=2027.5"></script>
-  <script src="../js/app.js?v=2027.18"></script>
+  <script src="../js/app.js?v=2027.20"></script>
 </body>
 </html>

@@ -486,9 +486,11 @@
         this.showToast('Todavía no se puede publicar: faltan notas por corregir o el empate sin resolver.', 'warning');
         return;
       }
-      const items = res.filas.map(f => ({ dni: String(f.st.dni).replace(/\D/g, ''), ingresa: f.estado === 'ingresa' || f.estado === 'ingresa_dir' }));
+      const items = res.filas.map(f => ({ dni: String(f.st.dni || '').replace(/\D/g, ''), ingresa: f.estado === 'ingresa' || f.estado === 'ingresa_dir' }));
       const n = items.filter(it => it.ingresa).length;
-      if (!confirm(`¿Publicar la condición final del ingreso?\n\n${n} estudiantes INGRESAN y ${items.length - n} no ingresan.\nCada familia lo verá con el DNI en el Resumen, con el mensaje correspondiente.`)) return;
+      const sinDni = res.filas.filter(f => !String(f.st.dni || '').replace(/\D/g, '')).map(f => `${f.st.apellido}, ${f.st.nombre}`);
+      const avisoDni = sinDni.length ? `\n\n⚠️ Sin DNI cargado (no lo van a poder consultar): ${sinDni.join(' · ')}. Cargalo en Padrón y Contactos → Editar datos y republicá.` : '';
+      if (!confirm(`¿Publicar la condición final del ingreso?\n\n${n} estudiantes INGRESAN y ${items.length - n} no ingresan.\nCada familia lo verá con el DNI en el Resumen, con el mensaje correspondiente.${avisoDni}`)) return;
       try {
         await window.FirebaseSyncService.publishIngreso(items);
         this.showToast(`📤 Condición final publicada: ${n} ingresan`, 'success');
@@ -500,7 +502,7 @@
     async unpublishIngreso() {
       if (!confirm('¿Retirar la condición final publicada?\n\nLas familias vuelven a ver "Condición final: pendiente".')) return;
       try {
-        const items = window.DataService.instancias.roster.map(r => ({ dni: String(r.dni).replace(/\D/g, '') }));
+        const items = window.DataService.instancias.roster.map(r => ({ dni: String(r.dni || '').replace(/\D/g, '') }));
         await window.FirebaseSyncService.publishIngreso(items, { retirar: true });
         this.showToast('Condición final retirada', 'success');
       } catch (err) {
@@ -540,6 +542,47 @@
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Orden de mérito');
       XLSX.writeFile(wb, `Orden_de_merito_Ingreso_2027_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    }
+
+    // Orden de mérito con todos los datos del estudiante (contacto, familiar, domicilio, escuela...)
+    // para armar los legajos. Hoja 1: orden completo; hoja 2: solo los que ingresan.
+    exportMeritoCompleto() {
+      if (typeof XLSX === 'undefined') {
+        this.showToast('No se pudo cargar el generador de Excel. Revisá la conexión a internet y recargá la página.', 'danger');
+        return;
+      }
+      const ds = window.DataService;
+      const res = this.getMerito();
+      const notaMC = new Map(ds.getConsolidatedResults().map(c => [c.student.id, c.finalScore]));
+      const SIT = { ingresa: 'Ingresa', ingresa_dir: 'Ingresa (decisión de Dirección)', no_ingresa: 'No ingresa', no_ingresa_dir: 'No ingresa (decisión de Dirección)', empate: 'Empate: falta decidir', incompleto: 'Falta corregir', ausente: 'No ingresa (ausente en un examen)' };
+      const header = ['Puesto', 'Situación', 'Promedio', 'Nota PdL', 'Fecha PdL', 'Nota Matemática', 'Nota multiple choice 2/10',
+        'Apellido', 'Nombre', 'DNI', 'CUIL', 'Familiar / tutor', 'Teléfono', 'Teléfono alternativo', 'Email',
+        'Domicilio', 'Localidad', 'Escuela de origen', 'Aula 2/10', 'N° de inscripción', 'Turno', 'Datos corregidos por Dirección'];
+      // Datos actuales del padrón (con las correcciones de Dirección); si no está, los del padrón de la 2da instancia
+      const fila = f => {
+        const s = ds.getStudentById(f.st.id) || f.st;
+        return [f.puesto || '', SIT[f.estado], f.promedio ?? '', f.pdl ?? '', (f.st.fecha || '').replace('-', '/'), f.mat ?? '', notaMC.get(f.st.id) ?? '',
+          s.apellido || '', s.nombre || '', String(s.dni || ''), String(s.cuil || ''), s.familiar || '', String(s.telefono || ''), String(s.telefono_alt || ''), s.email || '',
+          s.domicilio || '', s.localidad || '', s.escuela_origen || '', s.aula || '', s.nro_inscripcion || '', s.turno || '',
+          ds.getStudentOverride(f.st.id) ? 'Sí' : ''];
+      };
+      const hoja = (titulo, filas) => {
+        const ws = XLSX.utils.aoa_to_sheet([
+          [`EST UTN San Miguel - Ingreso 2027 - ${titulo}`],
+          [`Promedio de PdL y Matemática con todos los decimales. Ingresan ${res.cupo}.${res.incompletos ? ` PROVISORIO: ${res.incompletos} sin las dos notas.` : ''} Contiene datos personales: uso interno.`],
+          [],
+          header,
+          ...filas.map(fila)
+        ]);
+        ws['!cols'] = header.map(h => ({ wch: ({ Apellido: 22, Nombre: 24, 'Familiar / tutor': 26, Email: 30, Domicilio: 28, 'Escuela de origen': 30, Situación: 30 })[h] || Math.max(9, h.length + 2) }));
+        return ws;
+      };
+      const ingresan = res.filas.filter(f => f.estado === 'ingresa' || f.estado === 'ingresa_dir');
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, hoja('Orden de mérito con datos de contacto', res.filas), 'Orden de mérito completo');
+      XLSX.utils.book_append_sheet(wb, hoja(`Ingresan (${ingresan.length}) - Legajos`, ingresan), 'Ingresan - legajos');
+      XLSX.writeFile(wb, `Orden_de_merito_con_datos_Ingreso_2027_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      this.showToast(`📥 Planilla con datos de contacto: ${res.filas.length} estudiantes (${ingresan.length} ingresan)`, 'success');
     }
 
     // --- RESUMEN GENERAL DE TODAS LAS INSTANCIAS (DIRECCIÓN) ---

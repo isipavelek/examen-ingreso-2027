@@ -56,6 +56,8 @@
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/,/g, ' ').replace(/\s+/g, ' ')
     .toLowerCase().trim();
+  // DNI con el que la familia consulta (sin DNI no se puede publicar: el resultado se guarda por DNI)
+  const dniDe = st => String((st && st.dni) || '').replace(/\D/g, '');
   const matchesSearch = (st, query) => {
     const words = normalizeText(query).split(' ').filter(Boolean);
     const hay = [st.apellido, st.nombre, st.dni].map(normalizeText).join(' | ');
@@ -1178,6 +1180,7 @@
       const resueltos = [];   // corregidos o ausentes: se pueden publicar
       const nuevos = [];      // resueltos que todavía no se publicaron
       const cambiados = [];   // publicados que Dirección modificó después de publicar
+      const sinDni = [];      // resueltos que no se pueden publicar porque no tienen DNI cargado
       let publicados = 0;
       roster.forEach(st => {
         const g = grades.get(st.id);
@@ -1190,10 +1193,11 @@
           return;
         }
         resueltos.push(st);
-        if (!publicado) nuevos.push(st);
+        if (!dniDe(st)) sinDni.push(st);
+        else if (!publicado) nuevos.push(st);
         else if (pub && g && g.actualizadoEn && g.actualizadoEn > pub.en) cambiados.push(st);
       });
-      return { roster, counts, faltan, resueltos, nuevos, cambiados, publicados, listo: roster.length > 0 && faltan.length === 0 };
+      return { roster, counts, faltan, resueltos, nuevos, cambiados, sinDni, publicados, listo: roster.length > 0 && faltan.length === 0 };
     }
 
     renderPublicacion() {
@@ -1215,7 +1219,8 @@
         ? `✅ Publicadas ${s.publicados} de ${s.roster.length} notas (última vez el ${new Date(pub.en).toLocaleString('es-AR')} por ${escapeHtml(pub.por)}). Esas familias ya las ven y los profesores no pueden modificarlas.`
         : '⏳ Todavía no se publicó ninguna nota de esta fecha: las familias ven "Aún sin corregir".'}
         ${porPublicar ? `<br>🟢 Listas para publicar: ${partes.join(' y ')}.` : (s.resueltos.length ? '<br>No hay notas nuevas para publicar.' : '')}
-        ${s.faltan.length ? `<br>Quedan ${s.faltan.length} por corregir: siguen como "Aún sin corregir" hasta que las publiques.` : ''}</div>`;
+        ${s.faltan.length ? `<br>Quedan ${s.faltan.length} por corregir: siguen como "Aún sin corregir" hasta que las publiques.` : ''}</div>
+        ${s.sinDni.length ? `<div class="pub-status wait" style="border-color: rgba(239, 68, 68, 0.45); color: #fca5a5;">⚠️ ${s.sinDni.length} estudiante(s) no se pueden publicar porque no tienen DNI cargado: <strong>${s.sinDni.map(st => escapeHtml(`${st.apellido}, ${st.nombre}`)).join(' · ')}</strong>. Cargá el DNI en el sistema del personal (Padrón y Contactos → ✏️ Editar datos) y volvé a publicar.</div>` : ''}`;
       const actions = `<button class="btn btn-primary" data-act="publicar" ${porPublicar ? '' : 'disabled'}>📤 Publicar notas corregidas de ${escapeHtml(this.inst.titulo)}${porPublicar ? ` (${porPublicar})` : ''}</button>
         ${pub ? '<button class="btn btn-danger" data-act="retirar">🚫 Retirar todas las notas de esta fecha</button>' : ''}`;
       const pendientes = s.faltan.length
@@ -1334,7 +1339,7 @@
       if (!confirm(`¿Publicar ${aPublicar.length} nota(s) de ${inst.titulo} (${detalle})?\n\nEsas familias verán con el DNI la nota y cómo le fue en cada tema evaluado. No se publican consignas, observaciones ni quién corrigió.${s.faltan.length ? `\nLas ${s.faltan.length} que faltan corregir siguen como "Aún sin corregir".` : ''}\nLos estudiantes publicados quedan cerrados para los profesores.`)) return;
       try {
         const en = new Date().toISOString();
-        const docs = aPublicar.map(st => ({ dni: st.dni, apellido: st.apellido, nombre: st.nombre, [campo]: this.buildPublicResult(st, fecha, en) }));
+        const docs = aPublicar.map(st => ({ dni: dniDe(st), apellido: st.apellido, nombre: st.nombre, [campo]: this.buildPublicResult(st, fecha, en) }));
         for (let i = 0; i < docs.length; i += 400) {
           const batch = db.batch();
           docs.slice(i, i + 400).forEach(d => {
@@ -1360,11 +1365,11 @@
       const campo = Core.getRubricaInstancia(fecha).campoPublico;
       if (!confirm(`¿Retirar todas las notas publicadas de ${inst.titulo}?\n\nLas familias vuelven a ver "Aún sin corregir" y los profesores pueden volver a modificar esas correcciones.`)) return;
       try {
-        const roster = Core.rosterFor(this.roster, fecha);
+        const roster = Core.rosterFor(this.roster, fecha).filter(st => dniDe(st));
         for (let i = 0; i < roster.length; i += 400) {
           const batch = db.batch();
           roster.slice(i, i + 400).forEach(st => {
-            batch.set(db.collection('student_results').doc(st.dni), { [campo]: firebase.firestore.FieldValue.delete() }, { merge: true });
+            batch.set(db.collection('student_results').doc(dniDe(st)), { [campo]: firebase.firestore.FieldValue.delete() }, { merge: true });
           });
           await batch.commit();
         }
